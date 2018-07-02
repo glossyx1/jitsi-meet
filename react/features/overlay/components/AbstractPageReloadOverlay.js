@@ -294,12 +294,12 @@ export default class AbstractPageReloadOverlay extends Component<*, *> {
 export function abstractMapStateToProps(state: Object) {
     const { error: configError } = state['features/base/config'];
     const { error: connectionError } = state['features/base/connection'];
-    const { fatalError } = state['features/overlay'];
+    const fatalError = state['features/overlay'];
+    const _error = fatalError && fatalError.error;
 
     return {
-        details: fatalError && fatalError.details,
-        isNetworkFailure:
-            fatalError === configError || fatalError === connectionError,
-        reason: fatalError && fatalError.message
+        details: _error && _error.details,
+        isNetworkFailure: _error === configError || _error === connectionError,
+        reason: _error && _error.message
     };
 }

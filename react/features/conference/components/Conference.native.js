@@ -199,6 +199,7 @@ class Conference extends Component<Props> {
                 this._onHardwareBackPress);
         }
 
+        console.info('ON DISCONNECT');
         this.props._onDisconnect();
     }
 

@@ -10,12 +10,7 @@ import {
     getName
 } from '../../app';
 import {
-    CONFERENCE_FAILED,
-    CONFERENCE_LEFT,
-    CONFERENCE_WILL_JOIN,
-    CONFERENCE_JOINED,
-    SET_AUDIO_ONLY,
-    getCurrentConference
+    SET_AUDIO_ONLY
 } from '../../base/conference';
 import { getInviteURL } from '../../base/connection';
 import {
@@ -24,6 +19,15 @@ import {
     setAudioMuted
 } from '../../base/media';
 import { MiddlewareRegistry } from '../../base/redux';
+import {
+    SESSION_ENDED,
+    SESSION_FAILED,
+    SESSION_STARTED,
+    SESSION_WILL_START,
+    SET_SESSION,
+    getCurrentSession,
+    getSession
+} from '../../base/session';
 import {
     TRACK_ADDED,
     TRACK_REMOVED,
@@ -55,17 +59,8 @@ CallKit && MiddlewareRegistry.register(store => next => action => {
         });
         break;
 
-    case CONFERENCE_FAILED:
-        return _conferenceFailed(store, next, action);
-
-    case CONFERENCE_JOINED:
-        return _conferenceJoined(store, next, action);
-
-    case CONFERENCE_LEFT:
-        return _conferenceLeft(store, next, action);
-
-    case CONFERENCE_WILL_JOIN:
-        return _conferenceWillJoin(store, next, action);
+    case SET_SESSION:
+        return _setSession(store, next, action);
 
     case SET_AUDIO_ONLY:
         return _setAudioOnly(store, next, action);
@@ -131,6 +126,23 @@ function _appWillMount({ dispatch, getState }, next, action) {
     return result;
 }
 
+function _setSession(store, next, action) {
+    const { state } = action.session;
+
+    switch (state) {
+    case SESSION_ENDED:
+        return _sessionEnded(store, next, action);
+    case SESSION_FAILED:
+        return _sessionFailed(store, next, action);
+    case SESSION_STARTED:
+        return _sessionJoined(store, next, action);
+    case SESSION_WILL_START:
+        return _sessionWillStart(store, next, action);
+    }
+
+    return next(action);
+}
+
 /**
  * Notifies the feature callkit that the action {@link CONFERENCE_FAILED} is
  * being dispatched within a specific redux {@code store}.
@@ -144,21 +156,14 @@ function _appWillMount({ dispatch, getState }, next, action) {
  * @private
  * @returns {*} The value returned by {@code next(action)}.
  */
-function _conferenceFailed(store, next, action) {
-    const result = next(action);
+function _sessionFailed(store, next, action) {
+    const callUUID = _getCallUUIDForSessionAction(store, action);
 
-    // XXX Certain CONFERENCE_FAILED errors are recoverable i.e. they have
-    // prevented the user from joining a specific conference but the app may be
-    // able to eventually join the conference.
-    if (!action.error.recoverable) {
-        const { callUUID } = action.conference;
-
-        if (callUUID) {
-            CallKit.reportCallFailed(callUUID);
-        }
+    if (callUUID) {
+        CallKit.reportCallFailed(callUUID);
     }
 
-    return result;
+    return next(action);
 }
 
 /**
@@ -174,16 +179,14 @@ function _conferenceFailed(store, next, action) {
  * @private
  * @returns {*} The value returned by {@code next(action)}.
  */
-function _conferenceJoined(store, next, action) {
-    const result = next(action);
-
-    const { callUUID } = action.conference;
+function _sessionJoined(store, next, action) {
+    const callUUID = _getCallUUIDForSessionAction(store, action);
 
     if (callUUID) {
         CallKit.reportConnectedOutgoingCall(callUUID);
     }
 
-    return result;
+    return next(action);
 }
 
 /**
@@ -199,16 +202,25 @@ function _conferenceJoined(store, next, action) {
  * @private
  * @returns {*} The value returned by {@code next(action)}.
  */
-function _conferenceLeft(store, next, action) {
-    const result = next(action);
-
-    const { callUUID } = action.conference;
+function _sessionEnded(store, next, action) {
+    const callUUID = _getCallUUIDForSessionAction(store, action);
 
     if (callUUID) {
         CallKit.endCall(callUUID);
     }
 
-    return result;
+    return next(action);
+}
+
+function _getCallUUIDForSessionAction(store, { url }) {
+    const session = getSession(store, url);
+    const callUUID = session && session.callkit && session.callkit.callUUID;
+
+    if (!callUUID) {
+        console.info(`CALLKIT SESSION NOT FOUND FOR URL: ${url}`);
+    }
+
+    return callUUID;
 }
 
 /**
@@ -224,26 +236,28 @@ function _conferenceLeft(store, next, action) {
  * @private
  * @returns {*} The value returned by {@code next(action)}.
  */
-function _conferenceWillJoin({ getState }, next, action) {
-    const result = next(action);
-
-    const { conference } = action;
+function _sessionWillStart({ getState }, next, action) {
     const state = getState();
-    const { callHandle, callUUID } = state['features/base/config'];
+    const { callHandle, callUUID: _callUUID } = state['features/base/config'];
     const url = getInviteURL(state);
     const handle = callHandle || url.toString();
     const hasVideo = !isVideoMutedByAudioOnly(state);
 
     // When assigning the call UUID, do so in upper case, since iOS will return
     // it upper cased.
-    conference.callUUID = (callUUID || uuid.v4()).toUpperCase();
+    const callUUID = (_callUUID || uuid.v4()).toUpperCase();
 
-    CallKit.startCall(conference.callUUID, handle, hasVideo)
+    // Store the callUUID in the session
+    action.session.callkit.callUUID = callUUID;
+
+    CallKit.startCall(callUUID, handle, hasVideo)
         .then(() => {
             const { callee } = state['features/base/jwt'];
             const displayName
                  = state['features/base/config'].callDisplayName
                      || (callee && callee.name)
+
+                     // FIXME: room may not be there yet
                      || state['features/base/conference'].room;
 
             const muted
@@ -252,11 +266,11 @@ function _conferenceWillJoin({ getState }, next, action) {
                     MEDIA_TYPE.AUDIO);
 
             // eslint-disable-next-line object-property-newline
-            CallKit.updateCall(conference.callUUID, { displayName, hasVideo });
-            CallKit.setMuted(conference.callUUID, muted);
+            CallKit.updateCall(callUUID, { displayName, hasVideo });
+            CallKit.setMuted(callUUID, muted);
         });
 
-    return result;
+    return next(action);
 }
 
 /**
@@ -267,16 +281,34 @@ function _conferenceWillJoin({ getState }, next, action) {
  * @returns {void}
  */
 function _onPerformEndCallAction({ callUUID }) {
-    const { dispatch, getState } = this; // eslint-disable-line no-invalid-this
-    const conference = getCurrentConference(getState);
+    const { dispatch } = this; // eslint-disable-line no-invalid-this
+    const session = _findSessionForCallUUID(this, callUUID); // eslint-disable-line no-invalid-this
 
-    if (conference && conference.callUUID === callUUID) {
+    if (session) {
         // We arrive here when a call is ended by the system, for example, when
         // another incoming call is received and the user selects "End &
         // Accept".
-        delete conference.callUUID;
+        // FIXME update the session - needs new action, but do we really need to
+        // do that given that the session is to be destroyed on navigate ?
+        // delete session.callUUID;
         dispatch(appNavigate(undefined));
     }
+}
+
+function _findSessionForCallUUID({ getState }, callUUID) {
+    const sessions = getState()['features/base/session'];
+
+    for (const session of sessions.values()) {
+        const _callUUID = session.callkit && session.callkit.callUUID;
+
+        if (callUUID === _callUUID) {
+            return session;
+        }
+    }
+
+    console.info(`SESSION NOT FOUND FOR CALL ID: ${callUUID}`);
+
+    return null;
 }
 
 /**
@@ -287,10 +319,10 @@ function _onPerformEndCallAction({ callUUID }) {
  * @returns {void}
  */
 function _onPerformSetMutedCallAction({ callUUID, muted }) {
-    const { dispatch, getState } = this; // eslint-disable-line no-invalid-this
-    const conference = getCurrentConference(getState);
+    const { dispatch } = this; // eslint-disable-line no-invalid-this
+    const session = _findSessionForCallUUID(this, callUUID); // eslint-disable-line no-invalid-this
 
-    if (conference && conference.callUUID === callUUID) {
+    if (session) {
         muted = Boolean(muted); // eslint-disable-line no-param-reassign
         sendAnalytics(createTrackMutedEvent('audio', 'callkit', muted));
         dispatch(setAudioMuted(muted, /* ensureTrack */ true));
@@ -320,11 +352,11 @@ function _onPerformSetMutedCallAction({ callUUID, muted }) {
 function _setAudioOnly({ getState }, next, action) {
     const result = next(action);
     const state = getState();
-    const conference = getCurrentConference(state);
+    const session = getCurrentSession(state);
 
-    if (conference && conference.callUUID) {
+    if (session && session.callUUID) {
         CallKit.updateCall(
-            conference.callUUID,
+            session.callUUID,
             { hasVideo: !action.audioOnly });
     }
 
@@ -373,20 +405,25 @@ function _syncTrackState({ getState }, next, action) {
     const result = next(action);
     const { jitsiTrack } = action.track;
     const state = getState();
-    const conference = getCurrentConference(state);
 
-    if (jitsiTrack.isLocal() && conference && conference.callUUID) {
+    // It could go over all sessions here, but even if we'd support simultaneous
+    // sessions / putting on hold, probably only the active session would be
+    // holding the tracks.
+    const session = getCurrentSession(state);
+    const callUUID = session && session.callkit && session.callkit.callUUID;
+
+    if (jitsiTrack.isLocal() && callUUID) {
         switch (jitsiTrack.getType()) {
         case 'audio': {
             const tracks = state['features/base/tracks'];
             const muted = isLocalTrackMuted(tracks, MEDIA_TYPE.AUDIO);
 
-            CallKit.setMuted(conference.callUUID, muted);
+            CallKit.setMuted(callUUID, muted);
             break;
         }
         case 'video': {
             CallKit.updateCall(
-                conference.callUUID,
+                callUUID,
                 { hasVideo: !isVideoMutedByAudioOnly(state) });
             break;
         }

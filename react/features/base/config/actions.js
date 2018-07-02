@@ -44,7 +44,10 @@ export function configWillLoad(locationURL: URL) {
 export function loadConfigError(error: Error, locationURL: URL) {
     return {
         type: LOAD_CONFIG_ERROR,
-        error,
+        error: {
+            message: error.message,
+            name: error.name
+        },
         locationURL
     };
 }

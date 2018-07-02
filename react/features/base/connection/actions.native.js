@@ -19,6 +19,9 @@ import {
     SET_LOCATION_URL
 } from './actionTypes';
 
+// FIXME
+import { JITSI_CONFERENCE_URL_KEY } from '../conference/constants';
+
 const logger = require('jitsi-meet-logger').getLogger(__filename);
 
 /**
@@ -85,6 +88,10 @@ export function connect(id: ?string, password: ?string) {
                 options.appId,
                 jwt && issuer && issuer !== 'anonymous' ? jwt : undefined,
                 options);
+
+        const { locationURL } = state['features/base/connection'];
+
+        connection[JITSI_CONFERENCE_URL_KEY] = locationURL;
 
         dispatch(_connectionWillConnect(connection));
 

@@ -127,7 +127,10 @@ function _setConfig(state, { config }) {
     const newState = _.merge(
         {},
         config,
-        { error: undefined },
+        {
+            error: undefined,
+            locationURL: state.locationURL
+        },
 
         // The config of _getInitialState() is meant to override the config
         // downloaded from the Jitsi Meet deployment because the former contains

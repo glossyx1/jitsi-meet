@@ -6,6 +6,10 @@ import {
     SET_FATAL_ERROR,
     SUSPEND_DETECTED
 } from './actionTypes';
+import { setSession } from '../base/session/actions';
+import { SESSION_FAILED } from '../base/session/constants';
+import { getCurrentSession } from '../base/session/functions';
+import { toErrorString } from '../base/session';
 
 const logger = require('jitsi-meet-logger').getLogger(__filename);
 
@@ -82,5 +86,40 @@ export function setFatalError(fatalError) {
     return {
         type: SET_FATAL_ERROR,
         fatalError
+    };
+}
+
+/**
+ * FIXME naming is not quite accurate - came from the previous method which was
+ * reemitting the action.
+ *
+ * @return {Function}
+ */
+export function reemitFatalError() {
+    return (dispatch, getState) => {
+        const state = getState();
+
+        // const { error: conferenceError } = state['features/base/conference'];
+        // const { error: configError } = state['features/base/config'];
+        // const { error: connectionError } = state['features/base/connection'];
+        const { fatalError } = state['features/overlay'];
+
+        if (fatalError) {
+            const session = getCurrentSession(state);
+
+            if (session) {
+                dispatch(
+                    setSession({
+                        url: session.url,
+                        state: SESSION_FAILED,
+                        error: toErrorString(fatalError)
+                    }));
+            } else {
+                console.info('No current session!');
+            }
+            dispatch(setFatalError(undefined));
+        } else {
+            console.info('NO FATAL ERROR');
+        }
     };
 }
