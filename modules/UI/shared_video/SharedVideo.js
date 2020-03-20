@@ -301,8 +301,7 @@ export default class SharedVideoManager {
 
                 // FIXME The cat is out of the bag already or rather _room is
                 // not private because it is used in multiple other places
-                // already such as AbstractPageReloadOverlay and
-                // JitsiMeetLogStorage.
+                // already such as AbstractPageReloadOverlay.
                 conference: APP.conference._room,
                 id: self.url,
                 isFakeParticipant: true,
@@ -662,7 +661,7 @@ class SharedVideoContainer extends LargeContainer {
 
         if (interfaceConfig.VERTICAL_FILMSTRIP) {
             height = containerHeight - getToolboxHeight();
-            width = containerWidth - Filmstrip.getFilmstripWidth();
+            width = containerWidth - Filmstrip.getVerticalFilmstripWidth();
         } else {
             height = containerHeight - Filmstrip.getFilmstripHeight();
             width = containerWidth;

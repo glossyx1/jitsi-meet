@@ -1,9 +1,9 @@
 // @flow
 
-import { SET_ASPECT_RATIO, SET_REDUCED_UI } from './actionTypes';
-import { ASPECT_RATIO_NARROW, ASPECT_RATIO_WIDE } from './constants';
-
 import type { Dispatch } from 'redux';
+
+import { CLIENT_RESIZED, SET_ASPECT_RATIO, SET_REDUCED_UI } from './actionTypes';
+import { ASPECT_RATIO_NARROW, ASPECT_RATIO_WIDE } from './constants';
 
 /**
  * Size threshold for determining if we are in reduced UI mode or not.
@@ -12,11 +12,24 @@ import type { Dispatch } from 'redux';
  * very brittle because it's completely disconnected from the UI which wants to
  * be rendered and, naturally, it broke on iPad where even the secondary Toolbar
  * didn't fit in the height. We do need to measure the actual UI at runtime and
- * determine whether and how to render it. I'm bumping from 240 to 300 because I
- * don't have the time now to refactor {@code ReducedUIDetector} or rip it out
- * completely.
+ * determine whether and how to render it.
  */
 const REDUCED_UI_THRESHOLD = 300;
+
+/**
+ * Indicates a resize of the window.
+ *
+ * @param {number} clientWidth - The width of the window.
+ * @param {number} clientHeight - The height of the window.
+ * @returns {Object}
+ */
+export function clientResized(clientWidth: number, clientHeight: number) {
+    return {
+        type: CLIENT_RESIZED,
+        clientHeight,
+        clientWidth
+    };
+}
 
 /**
  * Sets the aspect ratio of the app's user interface based on specific width and
@@ -30,7 +43,7 @@ const REDUCED_UI_THRESHOLD = 300;
  * }}
  */
 export function setAspectRatio(width: number, height: number): Function {
-    return (dispatch: Dispatch<*>, getState: Function) => {
+    return (dispatch: Dispatch<any>, getState: Function) => {
         // Don't change the aspect ratio if width and height are the same, that
         // is, if we transition to a 1:1 aspect ratio.
         if (width !== height) {
@@ -60,7 +73,7 @@ export function setAspectRatio(width: number, height: number): Function {
  * }}
  */
 export function setReducedUI(width: number, height: number): Function {
-    return (dispatch: Dispatch<*>, getState: Function) => {
+    return (dispatch: Dispatch<any>, getState: Function) => {
         const reducedUI = Math.min(width, height) < REDUCED_UI_THRESHOLD;
 
         if (reducedUI !== getState()['features/base/responsive-ui'].reducedUI) {

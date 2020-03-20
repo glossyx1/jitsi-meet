@@ -2,14 +2,25 @@
 
 import _ from 'lodash';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
+import type { Dispatch } from 'redux';
 
+import {
+    createShortcutEvent,
+    createToolbarEvent,
+    sendAnalytics
+} from '../../../analytics';
+import { Icon, IconMenuDown, IconMenuUp } from '../../../base/icons';
+import { connect } from '../../../base/redux';
 import { dockToolbox } from '../../../toolbox';
 
-import { setFilmstripHovered } from '../../actions';
+import { setFilmstripHovered, setFilmstripVisible } from '../../actions';
 import { shouldRemoteVideosBeVisible } from '../../functions';
+
+import { getCurrentLayout, LAYOUTS } from '../../../video-layout';
+
 import Toolbar from './Toolbar';
 
+declare var APP: Object;
 declare var interfaceConfig: Object;
 
 /**
@@ -23,9 +34,34 @@ type Props = {
     _className: string,
 
     /**
+     * The current layout of the filmstrip.
+     */
+    _currentLayout: string,
+
+    /**
+     * The number of columns in tile view.
+     */
+    _columns: number,
+
+    /**
      * Whether the UI/UX is filmstrip-only.
      */
     _filmstripOnly: boolean,
+
+    /**
+     * The width of the filmstrip.
+     */
+    _filmstripWidth: number,
+
+    /**
+     * Whether the filmstrip scrollbar should be hidden or not.
+     */
+    _hideScrollbar: boolean,
+
+    /**
+     * Whether the filmstrip toolbar should be hidden or not.
+     */
+    _hideToolbar: boolean,
 
     /**
      * Whether or not remote videos are currently being hovered over. Hover
@@ -34,9 +70,24 @@ type Props = {
     _hovered: boolean,
 
     /**
+     * The number of rows in tile view.
+     */
+    _rows: number,
+
+    /**
+     * Additional CSS class names to add to the container of all the thumbnails.
+     */
+    _videosClassName: string,
+
+    /**
+     * Whether or not the filmstrip videos should currently be displayed.
+     */
+    _visible: boolean,
+
+    /**
      * The redux {@code dispatch} function.
      */
-    dispatch: Dispatch<*>
+    dispatch: Dispatch<any>
 };
 
 /**
@@ -68,8 +119,7 @@ class Filmstrip extends Component <Props> {
         // also works around an issue where mouseout and then a mouseover event
         // is fired when hovering over remote thumbnails, which are not yet in
         // react.
-        this._notifyOfHoveredStateUpdate
-            = _.debounce(this._notifyOfHoveredStateUpdate, 100);
+        this._notifyOfHoveredStateUpdate = _.debounce(this._notifyOfHoveredStateUpdate, 100);
 
         // Cache the current hovered state for _updateHoveredState to always
         // send the last known hovered state.
@@ -78,6 +128,33 @@ class Filmstrip extends Component <Props> {
         // Bind event handlers so they are only bound once for every instance.
         this._onMouseOut = this._onMouseOut.bind(this);
         this._onMouseOver = this._onMouseOver.bind(this);
+        this._onShortcutToggleFilmstrip = this._onShortcutToggleFilmstrip.bind(this);
+        this._onToolbarToggleFilmstrip = this._onToolbarToggleFilmstrip.bind(this);
+    }
+
+    /**
+     * Implements React's {@link Component#componentDidMount}.
+     *
+     * @inheritdoc
+     */
+    componentDidMount() {
+        if (!this.props._filmstripOnly) {
+            APP.keyboardshortcut.registerShortcut(
+                'F',
+                'filmstripPopover',
+                this._onShortcutToggleFilmstrip,
+                'keyboardShortcuts.toggleFilmstrip'
+            );
+        }
+    }
+
+    /**
+     * Implements React's {@link Component#componentDidUpdate}.
+     *
+     * @inheritdoc
+     */
+    componentWillUnmount() {
+        APP.keyboardshortcut.unregisterShortcut('F');
     }
 
     /**
@@ -94,11 +171,48 @@ class Filmstrip extends Component <Props> {
         // will get updated without replacing the DOM. If the known DOM gets
         // modified, then the views will get blown away.
 
+        const filmstripStyle = { };
+        const filmstripRemoteVideosContainerStyle = {};
+        let remoteVideoContainerClassName = 'remote-videos-container';
+
+        switch (this.props._currentLayout) {
+        case LAYOUTS.VERTICAL_FILMSTRIP_VIEW:
+            // Adding 18px for the 2px margins, 2px borders on the left and right and 5px padding on the left and right.
+            // Also adding 7px for the scrollbar.
+            filmstripStyle.maxWidth = (interfaceConfig.FILM_STRIP_MAX_HEIGHT || 120) + 25;
+            break;
+        case LAYOUTS.TILE_VIEW: {
+            // The size of the side margins for each tile as set in CSS.
+            const { _columns, _rows, _filmstripWidth } = this.props;
+
+            if (_rows > _columns) {
+                remoteVideoContainerClassName += ' has-overflow';
+            }
+
+            filmstripRemoteVideosContainerStyle.width = _filmstripWidth;
+            break;
+        }
+        }
+
+        let remoteVideosWrapperClassName = 'filmstrip__videos';
+
+        if (this.props._hideScrollbar) {
+            remoteVideosWrapperClassName += ' hide-scrollbar';
+        }
+
+        let toolbar = null;
+
+        if (!this.props._hideToolbar) {
+            toolbar = this.props._filmstripOnly ? <Toolbar /> : this._renderToggleButton();
+        }
+
         return (
-            <div className = { `filmstrip ${this.props._className}` }>
-                { this.props._filmstripOnly && <Toolbar /> }
+            <div
+                className = { `filmstrip ${this.props._className}` }
+                style = { filmstripStyle }>
+                { toolbar }
                 <div
-                    className = 'filmstrip__videos'
+                    className = { this.props._videosClassName }
                     id = 'remoteVideos'>
                     <div
                         className = 'filmstrip__videos'
@@ -108,7 +222,7 @@ class Filmstrip extends Component <Props> {
                         <div id = 'filmstripLocalVideoThumbnail' />
                     </div>
                     <div
-                        className = 'filmstrip__videos'
+                        className = { remoteVideosWrapperClassName }
                         id = 'filmstripRemoteVideos'>
                         {/*
                           * XXX This extra video container is needed for
@@ -116,14 +230,27 @@ class Filmstrip extends Component <Props> {
                           * thumbnails resize instead of causing overflow.
                           */}
                         <div
-                            className = 'remote-videos-container'
+                            className = { remoteVideoContainerClassName }
                             id = 'filmstripRemoteVideosContainer'
                             onMouseOut = { this._onMouseOut }
-                            onMouseOver = { this._onMouseOver } />
+                            onMouseOver = { this._onMouseOver }
+                            style = { filmstripRemoteVideosContainerStyle }>
+                            <div id = 'localVideoTileViewContainer' />
+                        </div>
                     </div>
                 </div>
             </div>
         );
+    }
+
+    /**
+     * Dispatches an action to change the visibility of the filmstrip.
+     *
+     * @private
+     * @returns {void}
+     */
+    _doToggleFilmstrip() {
+        this.props.dispatch(setFilmstripVisible(!this.props._visible));
     }
 
     /**
@@ -163,6 +290,65 @@ class Filmstrip extends Component <Props> {
         this._isHovered = true;
         this._notifyOfHoveredStateUpdate();
     }
+
+    _onShortcutToggleFilmstrip: () => void;
+
+    /**
+     * Creates an analytics keyboard shortcut event and dispatches an action for
+     * toggling filmstrip visibility.
+     *
+     * @private
+     * @returns {void}
+     */
+    _onShortcutToggleFilmstrip() {
+        sendAnalytics(createShortcutEvent(
+            'toggle.filmstrip',
+            {
+                enable: this.props._visible
+            }));
+
+        this._doToggleFilmstrip();
+    }
+
+    _onToolbarToggleFilmstrip: () => void;
+
+    /**
+     * Creates an analytics toolbar event and dispatches an action for opening
+     * the speaker stats modal.
+     *
+     * @private
+     * @returns {void}
+     */
+    _onToolbarToggleFilmstrip() {
+        sendAnalytics(createToolbarEvent(
+            'toggle.filmstrip.button',
+            {
+                enable: this.props._visible
+            }));
+
+        this._doToggleFilmstrip();
+    }
+
+    /**
+     * Creates a React Element for changing the visibility of the filmstrip when
+     * clicked.
+     *
+     * @private
+     * @returns {ReactElement}
+     */
+    _renderToggleButton() {
+        const icon = this.props._visible ? IconMenuDown : IconMenuUp;
+
+        return (
+            <div className = 'filmstrip__toolbar'>
+                <button
+                    id = 'toggleFilmstripButton'
+                    onClick = { this._onToolbarToggleFilmstrip }>
+                    <Icon src = { icon } />
+                </button>
+            </div>
+        );
+    }
 }
 
 /**
@@ -170,27 +356,34 @@ class Filmstrip extends Component <Props> {
  *
  * @param {Object} state - The Redux state.
  * @private
- * @returns {{
- *     _className: string,
- *     _hovered: boolean,
- *     _filmstripOnly: boolean
- * }}
+ * @returns {Props}
  */
 function _mapStateToProps(state) {
-    const { hovered } = state['features/filmstrip'];
+    const { iAmSipGateway } = state['features/base/config'];
+    const { hovered, visible } = state['features/filmstrip'];
     const isFilmstripOnly = Boolean(interfaceConfig.filmStripOnly);
-    const reduceHeight = !isFilmstripOnly
-        && state['features/toolbox'].visible
-        && interfaceConfig.TOOLBAR_BUTTONS.length;
+    const reduceHeight
+        = !isFilmstripOnly && state['features/toolbox'].visible && interfaceConfig.TOOLBAR_BUTTONS.length;
     const remoteVideosVisible = shouldRemoteVideosBeVisible(state);
+    const className = `${remoteVideosVisible ? '' : 'hide-videos'} ${reduceHeight ? 'reduce-height' : ''}`.trim();
+    const videosClassName = `filmstrip__videos${
+        isFilmstripOnly ? ' filmstrip__videos-filmstripOnly' : ''}${
+        visible ? '' : ' hidden'}`;
+    const { gridDimensions = {}, filmstripWidth } = state['features/filmstrip'].tileViewDimensions;
 
-    const className = `${remoteVideosVisible ? '' : 'hide-videos'} ${
-        reduceHeight ? 'reduce-height' : ''}`;
 
     return {
         _className: className,
+        _columns: gridDimensions.columns,
+        _currentLayout: getCurrentLayout(state),
         _filmstripOnly: isFilmstripOnly,
-        _hovered: hovered
+        _filmstripWidth: filmstripWidth,
+        _hideScrollbar: Boolean(iAmSipGateway),
+        _hideToolbar: Boolean(iAmSipGateway),
+        _hovered: hovered,
+        _rows: gridDimensions.rows,
+        _videosClassName: videosClassName,
+        _visible: visible
     };
 }
 

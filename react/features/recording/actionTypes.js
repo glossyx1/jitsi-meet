@@ -8,7 +8,7 @@
  * }
  * @public
  */
-export const CLEAR_RECORDING_SESSIONS = Symbol('CLEAR_RECORDING_SESSIONS');
+export const CLEAR_RECORDING_SESSIONS = 'CLEAR_RECORDING_SESSIONS';
 
 /**
  * The type of Redux action which updates the current known state of a recording
@@ -20,7 +20,7 @@ export const CLEAR_RECORDING_SESSIONS = Symbol('CLEAR_RECORDING_SESSIONS');
  * }
  * @public
  */
-export const RECORDING_SESSION_UPDATED = Symbol('RECORDING_SESSION_UPDATED');
+export const RECORDING_SESSION_UPDATED = 'RECORDING_SESSION_UPDATED';
 
 /**
  * The type of Redux action which sets the pending recording notification UID to
@@ -29,9 +29,20 @@ export const RECORDING_SESSION_UPDATED = Symbol('RECORDING_SESSION_UPDATED');
  *
  * {
  *     type: SET_PENDING_RECORDING_NOTIFICATION_UID,
+ *     streamType: string,
  *     uid: ?number
  * }
  * @public
  */
 export const SET_PENDING_RECORDING_NOTIFICATION_UID
-    = Symbol('SET_PENDING_RECORDING_NOTIFICATION_UID');
+    = 'SET_PENDING_RECORDING_NOTIFICATION_UID';
+
+/**
+ * Sets the stream key last used by the user for later reuse.
+ *
+ * {
+ *     type: SET_STREAM_KEY,
+ *     streamKey: string
+ * }
+ */
+export const SET_STREAM_KEY = 'SET_STREAM_KEY';

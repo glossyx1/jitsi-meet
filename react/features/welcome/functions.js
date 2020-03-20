@@ -1,16 +1,13 @@
 // @flow
 
-import { getAppProp } from '../app';
+import { WELCOME_PAGE_ENABLED, getFeatureFlag } from '../base/flags';
 import { toState } from '../base/redux';
 
 declare var APP: Object;
-declare var config: Object;
-
-export * from './roomnameGenerator';
 
 /**
  * Determines whether the {@code WelcomePage} is enabled by the app itself
- * (e.g. programmatically via the Jitsi Meet SDK for Android and iOS). Not to be
+ * (e.g. Programmatically via the Jitsi Meet SDK for Android and iOS). Not to be
  * confused with {@link isWelcomePageUserEnabled}.
  *
  * @param {Function|Object} stateful - The redux state or {@link getState}
@@ -19,8 +16,6 @@ export * from './roomnameGenerator';
  * {@code true}; otherwise, {@code false}.
  */
 export function isWelcomePageAppEnabled(stateful: Function | Object) {
-    let b;
-
     if (navigator.product === 'ReactNative') {
         // We introduced the welcomePageEnabled prop on App in Jitsi Meet SDK
         // for Android and iOS. There isn't a strong reason not to introduce it
@@ -29,12 +24,10 @@ export function isWelcomePageAppEnabled(stateful: Function | Object) {
         // - Enabling/disabling the Welcome page on Web historically
         // automatically redirects to a random room and that does not make sense
         // on mobile (right now).
-        b = Boolean(getAppProp(stateful, 'welcomePageEnabled'));
-    } else {
-        b = true;
+        return Boolean(getFeatureFlag(stateful, WELCOME_PAGE_ENABLED));
     }
 
-    return b;
+    return true;
 }
 
 /**

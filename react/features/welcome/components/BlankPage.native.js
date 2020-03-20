@@ -1,38 +1,36 @@
-/* @flow */
+// @flow
 
-import PropTypes from 'prop-types';
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
+import { View } from 'react-native';
+import type { Dispatch } from 'redux';
 
+import { ColorSchemeRegistry } from '../../base/color-scheme';
+import { LoadingIndicator } from '../../base/react';
+import { connect } from '../../base/redux';
+import { StyleType } from '../../base/styles';
 import { destroyLocalTracks } from '../../base/tracks';
-import { NetworkActivityIndicator } from '../../mobile/network-activity';
 
-import { isWelcomePageAppEnabled } from '../functions';
-import LocalVideoTrackUnderlay from './LocalVideoTrackUnderlay';
+import styles from './styles';
+
+/**
+ * The type of React {@code Component} props of {@link BlankPage}.
+ */
+type Props = {
+
+    /**
+     * The color schemed style of the component.
+     */
+    _styles: StyleType,
+
+    dispatch: Dispatch<any>
+};
 
 /**
  * The React {@code Component} displayed by {@code AbstractApp} when it has no
  * {@code Route} to render. Renders a progress indicator when there are ongoing
  * network requests.
  */
-class BlankPage extends Component<*> {
-    /**
-     * {@code BlankPage} React {@code Component}'s prop types.
-     *
-     * @static
-     */
-    static propTypes = {
-        /**
-         * The indicator which determines whether {@code WelcomePage} is (to
-         * be) rendered.
-         *
-         * @private
-         */
-        _welcomePageEnabled: PropTypes.bool,
-
-        dispatch: PropTypes.func
-    };
-
+class BlankPage extends Component<Props> {
     /**
      * Destroys the local tracks (if any) since no media is desired when this
      * component is rendered.
@@ -40,9 +38,8 @@ class BlankPage extends Component<*> {
      * @inheritdoc
      * @returns {void}
      */
-    componentWillMount() {
-        this.props._welcomePageEnabled
-            || this.props.dispatch(destroyLocalTracks());
+    componentDidMount() {
+        this.props.dispatch(destroyLocalTracks());
     }
 
     /**
@@ -52,27 +49,31 @@ class BlankPage extends Component<*> {
      * @returns {ReactElement}
      */
     render() {
+        const { _styles } = this.props;
+
         return (
-            <LocalVideoTrackUnderlay>
-                <NetworkActivityIndicator />
-            </LocalVideoTrackUnderlay>
+            <View
+                style = { [
+                    styles.blankPageWrapper,
+                    _styles.loadingOverlayWrapper
+                ] }>
+                <LoadingIndicator
+                    color = { _styles.indicatorColor }
+                    size = 'large' />
+            </View>
         );
     }
 }
 
 /**
- * Maps (parts of) the redux state to the React {@code Component} props of
- * {@code BlankPage}.
+ * Maps part of the Redux state to the props of this component.
  *
- * @param {Object} state - The redux state.
- * @private
- * @returns {{
- *     _welcomePageEnabled: boolean
- * }}
+ * @param {Object} state - The Redux state.
+ * @returns {Props}
  */
 function _mapStateToProps(state) {
     return {
-        _welcomePageEnabled: isWelcomePageAppEnabled(state)
+        _styles: ColorSchemeRegistry.get(state, 'LoadConfigOverlay')
     };
 }
 

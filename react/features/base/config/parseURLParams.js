@@ -1,5 +1,7 @@
 /* @flow */
 
+import { reportError } from '../util';
+
 /**
  * Parses the query/search or fragment/hash parameters out of a specific URL and
  * returns them as a JS object.
@@ -17,9 +19,18 @@ export default function parseURLParams(
         source: string = 'hash'): Object {
     const paramStr = source === 'search' ? url.search : url.hash;
     const params = {};
+    const paramParts = (paramStr && paramStr.substr(1).split('&')) || [];
 
-    // eslint-disable-next-line newline-per-chained-call
-    paramStr && paramStr.substr(1).split('&').forEach(part => {
+    // Detect and ignore hash params for hash routers.
+    if (source === 'hash' && paramParts.length === 1) {
+        const firstParam = paramParts[0];
+
+        if (firstParam.startsWith('/') && firstParam.split('&').length === 1) {
+            return params;
+        }
+    }
+
+    paramParts.forEach(part => {
         const param = part.split('=');
         const key = param[0];
 
@@ -31,15 +42,15 @@ export default function parseURLParams(
 
         try {
             value = param[1];
+
             if (!dontParse) {
-                value
-                    = JSON.parse(decodeURIComponent(value).replace(/\\&/, '&'));
+                const decoded = decodeURIComponent(value).replace(/\\&/, '&');
+
+                value = decoded === 'undefined' ? undefined : JSON.parse(decoded);
             }
         } catch (e) {
-            const msg = `Failed to parse URL parameter value: ${String(value)}`;
-
-            console.warn(msg, e);
-            window.onerror && window.onerror(msg, null, null, null, e);
+            reportError(
+                e, `Failed to parse URL parameter value: ${String(value)}`);
 
             return;
         }

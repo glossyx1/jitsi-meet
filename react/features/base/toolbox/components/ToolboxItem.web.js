@@ -3,6 +3,8 @@
 import Tooltip from '@atlaskit/tooltip';
 import React, { Fragment } from 'react';
 
+import { Icon } from '../../icons';
+
 import AbstractToolboxItem from './AbstractToolboxItem';
 import type { Props } from './AbstractToolboxItem';
 
@@ -22,6 +24,7 @@ export default class ToolboxItem extends AbstractToolboxItem<Props> {
     _renderItem() {
         const {
             disabled,
+            elementAfter,
             onClick,
             showLabel,
             tooltipPosition
@@ -34,18 +37,17 @@ export default class ToolboxItem extends AbstractToolboxItem<Props> {
         };
         const elementType = showLabel ? 'li' : 'div';
         const useTooltip = this.tooltip && this.tooltip.length > 0;
-        // eslint-disable-next-line no-extra-parens
         let children = (
             <Fragment>
                 { this._renderIcon() }
                 { showLabel && <span>
                     { this.label }
                 </span> }
+                { elementAfter }
             </Fragment>
         );
 
         if (useTooltip) {
-            // eslint-disable-next-line no-extra-parens
             children = (
                 <Tooltip
                     content = { this.tooltip }
@@ -65,12 +67,12 @@ export default class ToolboxItem extends AbstractToolboxItem<Props> {
      * @returns {ReactElement}
      */
     _renderIcon() {
-        const { iconName, showLabel } = this.props;
-        const icon = <i className = { iconName } />;
+        const { disabled, icon, showLabel, toggled } = this.props;
+        const iconComponent = <Icon src = { icon } />;
         const elementType = showLabel ? 'span' : 'div';
-        const className
-            = showLabel ? 'overflow-menu-item-icon' : 'toolbox-icon';
+        const className = `${showLabel ? 'overflow-menu-item-icon' : 'toolbox-icon'} ${
+            toggled ? 'toggled' : ''} ${disabled ? 'disabled' : ''}`;
 
-        return React.createElement(elementType, { className }, icon);
+        return React.createElement(elementType, { className }, iconComponent);
     }
 }

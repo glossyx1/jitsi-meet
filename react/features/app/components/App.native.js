@@ -1,122 +1,110 @@
-/* global __DEV__ */
+// @flow
 
-import PropTypes from 'prop-types';
 import React from 'react';
-import { Linking } from 'react-native';
 
 import '../../analytics';
 import '../../authentication';
+import { setColorScheme } from '../../base/color-scheme';
+import { DialogContainer } from '../../base/dialog';
+import { CALL_INTEGRATION_ENABLED, updateFlags } from '../../base/flags';
+import '../../base/jwt';
 import { Platform } from '../../base/react';
-import {
-    AspectRatioDetector,
-    ReducedUIDetector
-} from '../../base/responsive-ui';
+import '../../base/responsive-ui';
+import { updateSettings } from '../../base/settings';
+import '../../google-api';
 import '../../mobile/audio-mode';
+import '../../mobile/back-button';
 import '../../mobile/background';
-import '../../mobile/callkit';
+import '../../mobile/call-integration';
 import '../../mobile/external-api';
 import '../../mobile/full-screen';
 import '../../mobile/permissions';
 import '../../mobile/picture-in-picture';
 import '../../mobile/proximity';
 import '../../mobile/wake-lock';
+import '../../mobile/watchos';
 
+import logger from '../logger';
 import { AbstractApp } from './AbstractApp';
+import type { Props as AbstractAppProps } from './AbstractApp';
+
+declare var __DEV__;
 
 /**
- * Root application component.
+ * The type of React {@code Component} props of {@link App}.
+ */
+type Props = AbstractAppProps & {
+
+    /**
+     * An object of colors that override the default colors of the app/sdk.
+     */
+    colorScheme: ?Object,
+
+    /**
+     * Identifier for this app on the native side.
+     */
+    externalAPIScope: string,
+
+    /**
+     * An object with the feature flags.
+     */
+    flags: Object,
+
+    /**
+     * An object with user information (display name, email, avatar URL).
+     */
+    userInfo: ?Object
+};
+
+/**
+ * Root app {@code Component} on mobile/React Native.
  *
  * @extends AbstractApp
  */
 export class App extends AbstractApp {
-    /**
-     * App component's property types.
-     *
-     * @static
-     */
-    static propTypes = {
-        ...AbstractApp.propTypes,
-
-        addPeopleEnabled: PropTypes.bool,
-
-        dialOutEnabled: PropTypes.bool,
-
-        /**
-         * Whether Picture-in-Picture is enabled. If {@code true}, a toolbar
-         * button is rendered in the {@link Conference} view to afford entering
-         * Picture-in-Picture.
-         */
-        pictureInPictureEnabled: PropTypes.bool,
-
-        /**
-         * Whether the Welcome page is enabled. If {@code true}, the Welcome
-         * page is rendered when the {@link App} is not at a location (URL)
-         * identifying a Jitsi Meet conference/room.
-         */
-        welcomePageEnabled: PropTypes.bool
-    };
+    _init: Promise<*>;
 
     /**
-     * Initializes a new App instance.
+     * Initializes a new {@code App} instance.
      *
-     * @param {Object} props - The read-only React Component props with which
-     * the new instance is to be initialized.
+     * @param {Props} props - The read-only React {@code Component} props with
+     * which the new instance is to be initialized.
      */
-    constructor(props) {
+    constructor(props: Props) {
         super(props);
-
-        // Bind event handlers so they are only bound once for every instance.
-        this._onLinkingURL = this._onLinkingURL.bind(this);
 
         // In the Release configuration, React Native will (intentionally) throw
         // an unhandled JavascriptException for an unhandled JavaScript error.
-        // This will effectively kill the application. In accord with the Web,
-        // do not kill the application.
+        // This will effectively kill the app. In accord with the Web, do not
+        // kill the app.
         this._maybeDisableExceptionsManager();
     }
 
     /**
-     * Subscribe to notifications about activating URLs registered to be handled
-     * by this app.
+     * Initializes the color scheme.
      *
      * @inheritdoc
-     * @returns {void}
-     * @see https://facebook.github.io/react-native/docs/linking.html
-     */
-    componentWillMount() {
-        super.componentWillMount();
-
-        Linking.addEventListener('url', this._onLinkingURL);
-    }
-
-    /**
-     * Unsubscribe from notifications about activating URLs registered to be
-     * handled by this app.
      *
-     * @inheritdoc
      * @returns {void}
-     * @see https://facebook.github.io/react-native/docs/linking.html
      */
-    componentWillUnmount() {
-        Linking.removeEventListener('url', this._onLinkingURL);
+    componentDidMount() {
+        super.componentDidMount();
 
-        super.componentWillUnmount();
-    }
+        this._init.then(() => {
+            // We set these early enough so then we avoid any unnecessary re-renders.
+            const { dispatch } = this.state.store;
 
-    /**
-     * Injects {@link AspectRatioDetector} in order to detect the aspect ratio
-     * of this {@code App}'s user interface and afford {@link AspectRatioAware}.
-     *
-     * @override
-     */
-    _createElement(component, props) {
-        return (
-            <AspectRatioDetector>
-                <ReducedUIDetector>
-                    { super._createElement(component, props) }
-                </ReducedUIDetector>
-            </AspectRatioDetector>
-        );
+            dispatch(setColorScheme(this.props.colorScheme));
+            dispatch(updateFlags(this.props.flags));
+            dispatch(updateSettings(this.props.userInfo || {}));
+
+            // Update settings with feature-flag.
+            const callIntegrationEnabled = this.props.flags[CALL_INTEGRATION_ENABLED];
+
+            if (typeof callIntegrationEnabled !== 'undefined') {
+                dispatch(updateSettings({ disableCallIntegration: !callIntegrationEnabled }));
+            }
+        });
     }
 
     /**
@@ -124,10 +112,9 @@ export class App extends AbstractApp {
      * {@link ExceptionsManager#handleException} on platforms and in
      * configurations on/in which the use of the method in questions has been
      * determined to be undesirable. For example, React Native will
-     * (intentionally) throw an unhandled JavascriptException for an
+     * (intentionally) throw an unhandled {@code JavascriptException} for an
      * unhandled JavaScript error in the Release configuration. This will
-     * effectively kill the application. In accord with the Web, do not kill the
-     * application.
+     * effectively kill the app. In accord with the Web, do not kill the app.
      *
      * @private
      * @returns {void}
@@ -142,9 +129,9 @@ export class App extends AbstractApp {
             // A solution based on RTCSetFatalHandler was implemented on iOS and
             // it is preferred because it is at a later step of the
             // error/exception handling and it is specific to fatal
-            // errors/exceptions which were observed to kill the application.
-            // The solution implemented bellow was tested on Android only so it
-            // is considered safest to use it there only.
+            // errors/exceptions which were observed to kill the app. The
+            // solution implemented bellow was tested on Android only so it is
+            // considered safest to use it there only.
             return;
         }
 
@@ -158,28 +145,25 @@ export class App extends AbstractApp {
     }
 
     /**
-     * Notified by React's Linking API that a specific URL registered to be
-     * handled by this App was activated.
+     * Renders the platform specific dialog container.
      *
-     * @param {Object} event - The details of the notification/event.
-     * @param {string} event.url - The URL registered to be handled by this App
-     * which was activated.
-     * @private
-     * @returns {void}
+     * @returns {React$Element}
      */
-    _onLinkingURL({ url }) {
-        this._openURL(url);
+    _renderDialogContainer() {
+        return (
+            <DialogContainer />
+        );
     }
 }
 
 /**
  * Handles a (possibly unhandled) JavaScript error by preventing React Native
  * from converting a fatal error into an unhandled native exception which will
- * kill the application.
+ * kill the app.
  *
  * @param {Error} error - The (possibly unhandled) JavaScript error to handle.
- * @param {boolean} fatal - True if the specified error is fatal; otherwise,
- * false.
+ * @param {boolean} fatal - If the specified error is fatal, {@code true};
+ * otherwise, {@code false}.
  * @private
  * @returns {void}
  */
@@ -187,12 +171,12 @@ function _handleException(error, fatal) {
     if (fatal) {
         // In the Release configuration, React Native will (intentionally) throw
         // an unhandled JavascriptException for an unhandled JavaScript error.
-        // This will effectively kill the application. In accord with the Web,
-        // do not kill the application.
-        console.error(error);
+        // This will effectively kill the app. In accord with the Web, do not
+        // kill the app.
+        logger.error(error);
     } else {
         // Forward to the next globalHandler of ErrorUtils.
-        const next = _handleException.next;
+        const { next } = _handleException;
 
         typeof next === 'function' && next(error, fatal);
     }

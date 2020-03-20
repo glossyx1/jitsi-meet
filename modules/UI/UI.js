@@ -4,9 +4,6 @@ const logger = require('jitsi-meet-logger').getLogger(__filename);
 
 const UI = {};
 
-import Chat from './side_pannels/chat/Chat';
-import SidePanels from './side_pannels/SidePanels';
-import SideContainerToggler from './side_pannels/SideContainerToggler';
 import messageHandler from './util/MessageHandler';
 import UIUtil from './util/UIUtil';
 import UIEvents from '../../service/UI/UIEvents';
@@ -14,21 +11,12 @@ import EtherpadManager from './etherpad/Etherpad';
 import SharedVideoManager from './shared_video/SharedVideo';
 
 import VideoLayout from './videolayout/VideoLayout';
-import Filmstrip from './videolayout/Filmstrip';
 
-import { updateDeviceList } from '../../react/features/base/devices';
-import { JitsiTrackErrors } from '../../react/features/base/lib-jitsi-meet';
-import {
-    getLocalParticipant,
-    showParticipantJoinedNotification
-} from '../../react/features/base/participants';
-import { destroyLocalTracks } from '../../react/features/base/tracks';
-import { openDisplayNamePrompt } from '../../react/features/display-name';
-import { setEtherpadHasInitialzied } from '../../react/features/etherpad';
-import {
-    setNotificationsEnabled,
-    showWarningNotification
-} from '../../react/features/notifications';
+import { getLocalParticipant } from '../../react/features/base/participants';
+import { toggleChat } from '../../react/features/chat';
+import { setDocumentUrl } from '../../react/features/etherpad';
+import { setFilmstripVisible } from '../../react/features/filmstrip';
+import { joinLeaveNotificationsDisabled, setNotificationsEnabled } from '../../react/features/notifications';
 import {
     dockToolbox,
     setToolboxEnabled,
@@ -38,7 +26,6 @@ import {
 const EventEmitter = require('events');
 
 UI.messageHandler = messageHandler;
-import FollowMe from '../FollowMe';
 
 const eventEmitter = new EventEmitter();
 
@@ -46,41 +33,6 @@ UI.eventEmitter = eventEmitter;
 
 let etherpadManager;
 let sharedVideoManager;
-
-let followMeHandler;
-
-const JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP = {
-    microphone: {},
-    camera: {}
-};
-
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-    .camera[JitsiTrackErrors.UNSUPPORTED_RESOLUTION]
-        = 'dialog.cameraUnsupportedResolutionError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.camera[JitsiTrackErrors.GENERAL]
-    = 'dialog.cameraUnknownError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.camera[JitsiTrackErrors.PERMISSION_DENIED]
-    = 'dialog.cameraPermissionDeniedError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.camera[JitsiTrackErrors.NOT_FOUND]
-    = 'dialog.cameraNotFoundError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.camera[JitsiTrackErrors.CONSTRAINT_FAILED]
-    = 'dialog.cameraConstraintFailedError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-    .camera[JitsiTrackErrors.NO_DATA_FROM_SOURCE]
-        = 'dialog.cameraNotSendingData';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.microphone[JitsiTrackErrors.GENERAL]
-    = 'dialog.micUnknownError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-    .microphone[JitsiTrackErrors.PERMISSION_DENIED]
-        = 'dialog.micPermissionDeniedError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.microphone[JitsiTrackErrors.NOT_FOUND]
-    = 'dialog.micNotFoundError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-    .microphone[JitsiTrackErrors.CONSTRAINT_FAILED]
-        = 'dialog.micConstraintFailedError';
-JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-    .microphone[JitsiTrackErrors.NO_DATA_FROM_SOURCE]
-        = 'dialog.micNotSendingData';
 
 const UIListeners = new Map([
     [
@@ -90,14 +42,8 @@ const UIListeners = new Map([
         UIEvents.SHARED_VIDEO_CLICKED,
         () => sharedVideoManager && sharedVideoManager.toggleSharedVideo()
     ], [
-        UIEvents.TOGGLE_CHAT,
-        () => UI.toggleChat()
-    ], [
         UIEvents.TOGGLE_FILMSTRIP,
-        () => UI.handleToggleFilmstrip()
-    ], [
-        UIEvents.FOLLOW_ME_ENABLED,
-        enabled => followMeHandler && followMeHandler.enableFollowMe(enabled)
+        () => UI.toggleFilmstrip()
     ]
 ]);
 
@@ -152,17 +98,6 @@ UI.notifyReservationError = function(code, msg) {
 };
 
 /**
- * Notify user that he has been kicked from the server.
- */
-UI.notifyKicked = function() {
-    messageHandler.showError({
-        hideErrorSupportLink: true,
-        descriptionKey: 'dialog.kickMessage',
-        titleKey: 'dialog.sessTerminated'
-    });
-};
-
-/**
  * Notify user that conference was destroyed.
  * @param reason {string} the reason text
  */
@@ -176,59 +111,13 @@ UI.notifyConferenceDestroyed = function(reason) {
 };
 
 /**
- * Show chat error.
- * @param err the Error
- * @param msg
- */
-UI.showChatError = function(err, msg) {
-    if (!interfaceConfig.filmStripOnly) {
-        Chat.chatAddError(err, msg);
-    }
-};
-
-/**
  * Change nickname for the user.
  * @param {string} id user id
  * @param {string} displayName new nickname
  */
 UI.changeDisplayName = function(id, displayName) {
     VideoLayout.onDisplayNameChanged(id, displayName);
-
-    if (APP.conference.isLocalId(id) || id === 'localVideoContainer') {
-        Chat.setChatConversationMode(Boolean(displayName));
-    }
 };
-
-/**
- * Sets the "raised hand" status for a participant.
- *
- * @param {string} id - The id of the participant whose raised hand UI should
- * be updated.
- * @param {string} name - The name of the participant with the raised hand
- * update.
- * @param {boolean} raisedHandStatus - Whether the participant's hand is raised
- * or not.
- * @returns {void}
- */
-UI.setRaisedHandStatus = (id, name, raisedHandStatus) => {
-    VideoLayout.setRaisedHandStatus(id, raisedHandStatus);
-    if (raisedHandStatus) {
-        messageHandler.participantNotification(
-            name,
-            'notify.somebody',
-            'connected',
-            'notify.raisedHand');
-    }
-};
-
-/**
- * Sets the local "raised hand" status.
- */
-UI.setLocalRaisedHandStatus
-    = raisedHandStatus =>
-        VideoLayout.setRaisedHandStatus(
-            APP.conference.getMyUserId(),
-            raisedHandStatus);
 
 /**
  * Initialize conference UI.
@@ -237,10 +126,6 @@ UI.initConference = function() {
     const { getState } = APP.store;
     const { id, name } = getLocalParticipant(getState);
 
-    // Update default button states before showing the toolbar
-    // if local role changes buttons state will be again updated.
-    UI.updateLocalRole(APP.conference.isModerator);
-
     UI.showToolbar();
 
     const displayName = config.displayJids ? id : name;
@@ -248,18 +133,7 @@ UI.initConference = function() {
     if (displayName) {
         UI.changeDisplayName('localVideoContainer', displayName);
     }
-
-    // FollowMe attempts to copy certain aspects of the moderator's UI into the
-    // other participants' UI. Consequently, it needs (1) read and write access
-    // to the UI (depending on the moderator role of the local participant) and
-    // (2) APP.conference as means of communication between the participants.
-    followMeHandler = new FollowMe(APP.conference, UI);
 };
-
-/** *
- * Handler for toggling filmstrip
- */
-UI.handleToggleFilmstrip = () => UI.toggleFilmstrip();
 
 /**
  * Returns the shared document manager object.
@@ -276,13 +150,8 @@ UI.getSharedVideoManager = function() {
  * established, false - otherwise (for example in the case of welcome page)
  */
 UI.start = function() {
-    document.title = interfaceConfig.APP_NAME;
-
     // Set the defaults for prompt dialogs.
     $.prompt.setDefaults({ persistent: false });
-
-    SideContainerToggler.init(eventEmitter);
-    Filmstrip.init(eventEmitter);
 
     VideoLayout.init(eventEmitter);
     if (!interfaceConfig.filmStripOnly) {
@@ -293,40 +162,23 @@ UI.start = function() {
     // resizeVideoArea) because the animation is not visible anyway. Plus with
     // the current dom layout, the quality label is part of the video layout and
     // will be seen animating in.
-    VideoLayout.resizeVideoArea(true, false);
+    VideoLayout.resizeVideoArea();
 
     sharedVideoManager = new SharedVideoManager(eventEmitter);
 
     if (interfaceConfig.filmStripOnly) {
         $('body').addClass('filmstrip-only');
-        Filmstrip.setFilmstripOnly();
         APP.store.dispatch(setNotificationsEnabled(false));
-    } else {
-        // Initialize recording mode UI.
-        if (config.iAmRecorder) {
-            VideoLayout.enableDeviceAvailabilityIcons(
-                APP.conference.getMyUserId(), false);
-
-            // in case of iAmSipGateway keep local video visible
-            if (!config.iAmSipGateway) {
-                VideoLayout.setLocalVideoVisible(false);
-            }
-
-            APP.store.dispatch(setToolboxEnabled(false));
+    } else if (config.iAmRecorder) {
+        // in case of iAmSipGateway keep local video visible
+        if (!config.iAmSipGateway) {
+            VideoLayout.setLocalVideoVisible(false);
             APP.store.dispatch(setNotificationsEnabled(false));
-            UI.messageHandler.enablePopups(false);
         }
 
-        // Initialize side panels
-        SidePanels.init(eventEmitter);
+        APP.store.dispatch(setToolboxEnabled(false));
+        UI.messageHandler.enablePopups(false);
     }
-
-    const filmstripTypeClassname = interfaceConfig.VERTICAL_FILMSTRIP
-        ? 'vertical-filmstrip' : 'horizontal-filmstrip';
-
-    $('body').addClass(filmstripTypeClassname);
-
-    document.title = interfaceConfig.APP_NAME;
 };
 
 /**
@@ -336,12 +188,6 @@ UI.registerListeners
     = () => UIListeners.forEach((value, key) => UI.addListener(key, value));
 
 /**
- * Unregister some UI event listeners.
- */
-UI.unregisterListeners
-    = () => UIListeners.forEach((value, key) => UI.removeListener(key, value));
-
-/**
  * Setup some DOM event listeners.
  */
 UI.bindEvents = () => {
@@ -349,8 +195,7 @@ UI.bindEvents = () => {
      *
      */
     function onResize() {
-        SideContainerToggler.resize();
-        VideoLayout.resizeVideoArea();
+        VideoLayout.onResize();
     }
 
     // Resize and reposition videos in full screen mode.
@@ -372,29 +217,12 @@ UI.unbindEvents = () => {
 };
 
 /**
- * Show local stream on UI.
+ * Show local video stream on UI.
  * @param {JitsiTrack} track stream to show
  */
-UI.addLocalStream = track => {
-    switch (track.getType()) {
-    case 'audio':
-        // Local audio is not rendered so no further action is needed at this
-        // point.
-        break;
-    case 'video':
-        VideoLayout.changeLocalVideo(track);
-        break;
-    default:
-        logger.error(`Unknown stream type: ${track.getType()}`);
-        break;
-    }
+UI.addLocalVideoStream = track => {
+    VideoLayout.changeLocalVideo(track);
 };
-
-/**
- * Removed remote stream from UI.
- * @param {JitsiTrack} track stream to remove
- */
-UI.removeRemoteStream = track => VideoLayout.onRemoteStreamRemoved(track);
 
 /**
  * Setup and show Etherpad.
@@ -405,10 +233,12 @@ UI.initEtherpad = name => {
         return;
     }
     logger.log('Etherpad is enabled');
-    etherpadManager
-        = new EtherpadManager(config.etherpad_base, name, eventEmitter);
 
-    APP.store.dispatch(setEtherpadHasInitialzied());
+    etherpadManager = new EtherpadManager(eventEmitter);
+
+    const url = new URL(name, config.etherpad_base);
+
+    APP.store.dispatch(setDocumentUrl(url.toString()));
 };
 
 /**
@@ -429,8 +259,6 @@ UI.addUser = function(user) {
     if (status) {
         // FIXME: move updateUserStatus in participantPresenceChanged action
         UI.updateUserStatus(user, status);
-    } else {
-        APP.store.dispatch(showParticipantJoinedNotification(displayName));
     }
 
     // set initial display name
@@ -448,51 +276,18 @@ UI.onPeerVideoTypeChanged
     = (id, newVideoType) => VideoLayout.onVideoTypeChanged(id, newVideoType);
 
 /**
- * Update local user role and show notification if user is moderator.
- * @param {boolean} isModerator if local user is moderator or not
- */
-UI.updateLocalRole = isModerator => {
-    VideoLayout.showModeratorIndicator();
-
-    if (isModerator && !interfaceConfig.DISABLE_FOCUS_INDICATOR) {
-        messageHandler.participantNotification(
-            null, 'notify.me', 'connected', 'notify.moderator');
-    }
-};
-
-/**
- * Check the role for the user and reflect it in the UI, moderator ui indication
- * and notifies user who is the moderator
- * @param user to check for moderator
- */
-UI.updateUserRole = user => {
-    VideoLayout.showModeratorIndicator();
-
-    // We don't need to show moderator notifications when the focus (moderator)
-    // indicator is disabled.
-    if (!user.isModerator() || interfaceConfig.DISABLE_FOCUS_INDICATOR) {
-        return;
-    }
-
-    const displayName = user.getDisplayName();
-
-    messageHandler.participantNotification(
-        displayName,
-        'notify.somebody',
-        'connected',
-        'notify.grantedTo',
-        { to: displayName
-            ? UIUtil.escapeHtml(displayName) : '$t(notify.somebody)' });
-};
-
-/**
  * Updates the user status.
  *
  * @param {JitsiParticipant} user - The user which status we need to update.
  * @param {string} status - The new status.
  */
 UI.updateUserStatus = (user, status) => {
-    if (!status) {
+    const reduxState = APP.store.getState() || {};
+    const { calleeInfoVisible } = reduxState['features/invite'] || {};
+
+    // We hide status updates when join/leave notifications are disabled,
+    // as jigasi is the component with statuses and they are seen as join/leave notifications.
+    if (!status || calleeInfoVisible || joinLeaveNotificationsDisabled()) {
         return;
     }
 
@@ -507,42 +302,18 @@ UI.updateUserStatus = (user, status) => {
 };
 
 /**
- * Toggles smileys in the chat.
- */
-UI.toggleSmileys = () => Chat.toggleSmileys();
-
-/**
  * Toggles filmstrip.
  */
 UI.toggleFilmstrip = function() {
-    // eslint-disable-next-line prefer-rest-params
-    Filmstrip.toggleFilmstrip(...arguments);
-    VideoLayout.resizeVideoArea(true, false);
+    const { visible } = APP.store.getState()['features/filmstrip'];
+
+    APP.store.dispatch(setFilmstripVisible(!visible));
 };
 
 /**
- * Checks if the filmstrip is currently visible or not.
- * @returns {true} if the filmstrip is currently visible, and false otherwise.
+ * Toggles the visibility of the chat panel.
  */
-UI.isFilmstripVisible = () => Filmstrip.isFilmstripVisible();
-
-/**
- * @returns {true} if the chat panel is currently visible, and false otherwise.
- */
-UI.isChatVisible = () => Chat.isVisible();
-
-/**
- * Toggles chat panel.
- */
-UI.toggleChat = () => UI.toggleSidePanel('chat_container');
-
-/**
- * Toggles the given side panel.
- *
- * @param {String} sidePanelId the identifier of the side panel to toggle
- */
-UI.toggleSidePanel = sidePanelId => SideContainerToggler.toggle(sidePanelId);
-
+UI.toggleChat = () => APP.store.dispatch(toggleChat());
 
 /**
  * Handle new user display name.
@@ -635,6 +406,15 @@ UI.addListener = function(type, listener) {
 };
 
 /**
+ * Removes the all listeners for all events.
+ *
+ * @returns {void}
+ */
+UI.removeAllListeners = function() {
+    eventEmitter.removeAllListeners();
+};
+
+/**
  * Removes the given listener for the given type of event.
  *
  * @param type the type of the event we're listening for
@@ -652,17 +432,7 @@ UI.removeListener = function(type, listener) {
  */
 UI.emitEvent = (type, ...options) => eventEmitter.emit(type, ...options);
 
-UI.clickOnVideo = function(videoNumber) {
-    const videos = $('#remoteVideos .videocontainer:not(#mixedstream)');
-    const videosLength = videos.length;
-
-    if (videosLength <= videoNumber) {
-        return;
-    }
-    const videoIndex = videoNumber === 0 ? 0 : videosLength - videoNumber;
-
-    videos[videoIndex].click();
-};
+UI.clickOnVideo = videoNumber => VideoLayout.togglePin(videoNumber);
 
 // Used by torture.
 UI.showToolbar = timeout => APP.store.dispatch(showToolbox(timeout));
@@ -677,8 +447,8 @@ UI.dockToolbar = dock => APP.store.dispatch(dockToolbox(dock));
  * @param {string} avatarURL - The URL to avatar image to display.
  * @returns {void}
  */
-UI.refreshAvatarDisplay = function(id, avatarURL) {
-    VideoLayout.changeUserAvatar(id, avatarURL);
+UI.refreshAvatarDisplay = function(id) {
+    VideoLayout.changeUserAvatar(id);
 };
 
 /**
@@ -732,13 +502,6 @@ UI.handleLastNEndpoints = function(leavingIds, enteringIds) {
 };
 
 /**
- * Prompt user for nickname.
- */
-UI.promptDisplayName = () => {
-    APP.store.dispatch(openDisplayNamePrompt());
-};
-
-/**
  * Update audio level visualization for specified user.
  * @param {string} id user id
  * @param {number} lvl audio level
@@ -752,17 +515,6 @@ UI.hideStats = function() {
     VideoLayout.hideStats();
 };
 
-/**
- * Add chat message.
- * @param {string} from user id
- * @param {string} displayName user nickname
- * @param {string} message message text
- * @param {number} stamp timestamp when message was created
- */
-// eslint-disable-next-line max-params
-UI.addMessage = function(from, displayName, message, stamp) {
-    Chat.updateChatConversation(from, displayName, message, stamp);
-};
 
 UI.notifyTokenAuthFailed = function() {
     messageHandler.showError({
@@ -800,10 +552,8 @@ UI.onLocalRaiseHandChanged = function(isRaisedHand) {
 
 /**
  * Update list of available physical devices.
- * @param {object[]} devices new list of available devices
  */
-UI.onAvailableDevicesChanged = function(devices) {
-    APP.store.dispatch(updateDeviceList(devices));
+UI.onAvailableDevicesChanged = function() {
     APP.conference.updateAudioIconEnabled();
     APP.conference.updateVideoIconEnabled();
 };
@@ -901,87 +651,6 @@ UI.showExtensionInlineInstallationDialog = function(callback) {
 };
 
 /**
- * Shows a notifications about the passed in microphone error.
- *
- * @param {JitsiTrackError} micError - An error object related to using or
- * acquiring an audio stream.
- * @returns {void}
- */
-UI.showMicErrorNotification = function(micError) {
-    if (!micError) {
-        return;
-    }
-
-    const { message, name } = micError;
-
-    const micJitsiTrackErrorMsg
-        = JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.microphone[name];
-    const micErrorMsg = micJitsiTrackErrorMsg
-        || JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-            .microphone[JitsiTrackErrors.GENERAL];
-    const additionalMicErrorMsg = micJitsiTrackErrorMsg ? null : message;
-
-    APP.store.dispatch(showWarningNotification({
-        description: additionalMicErrorMsg,
-        descriptionKey: micErrorMsg,
-        titleKey: name === JitsiTrackErrors.PERMISSION_DENIED
-            ? 'deviceError.microphonePermission'
-            : 'deviceError.microphoneError'
-    }));
-};
-
-/**
- * Shows a notifications about the passed in camera error.
- *
- * @param {JitsiTrackError} cameraError - An error object related to using or
- * acquiring a video stream.
- * @returns {void}
- */
-UI.showCameraErrorNotification = function(cameraError) {
-    if (!cameraError) {
-        return;
-    }
-
-    const { message, name } = cameraError;
-
-    const cameraJitsiTrackErrorMsg
-        = JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP.camera[name];
-    const cameraErrorMsg = cameraJitsiTrackErrorMsg
-        || JITSI_TRACK_ERROR_TO_MESSAGE_KEY_MAP
-            .camera[JitsiTrackErrors.GENERAL];
-    const additionalCameraErrorMsg = cameraJitsiTrackErrorMsg ? null : message;
-
-    APP.store.dispatch(showWarningNotification({
-        description: additionalCameraErrorMsg,
-        descriptionKey: cameraErrorMsg,
-        titleKey: name === JitsiTrackErrors.PERMISSION_DENIED
-            ? 'deviceError.cameraPermission' : 'deviceError.cameraError'
-    }));
-};
-
-/**
- * Shows error dialog that informs the user that no data is received from the
- * device.
- *
- * @param {boolean} isAudioTrack - Whether or not the dialog is for an audio
- * track error.
- * @returns {void}
- */
-UI.showTrackNotWorkingDialog = function(isAudioTrack) {
-    messageHandler.showError({
-        descriptionKey: isAudioTrack
-            ? 'dialog.micNotSendingData' : 'dialog.cameraNotSendingData',
-        titleKey: isAudioTrack
-            ? 'dialog.micNotSendingDataTitle'
-            : 'dialog.cameraNotSendingDataTitle'
-    });
-};
-
-UI.updateDevicesAvailability = function(id, devices) {
-    VideoLayout.setDeviceAvailabilityIcons(id, devices);
-};
-
-/**
  * Show shared video.
  * @param {string} id the id of the sender of the command
  * @param {string} url video url
@@ -1046,18 +715,6 @@ UI.setRemoteControlActiveStatus = function(participantID, isActive) {
  */
 UI.setLocalRemoteControlActiveChanged = function() {
     VideoLayout.setLocalRemoteControlActiveChanged();
-};
-
-/**
- * Remove media tracks and UI elements so the user no longer sees media in the
- * UI. The intent is to provide a feeling that the meeting has ended.
- *
- * @returns {void}
- */
-UI.removeLocalMedia = function() {
-    APP.store.dispatch(destroyLocalTracks());
-    VideoLayout.resetLargeVideo();
-    $('#videospace').hide();
 };
 
 // TODO: Export every function separately. For now there is no point of doing

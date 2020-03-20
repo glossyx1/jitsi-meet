@@ -14,6 +14,8 @@ export const JitsiConnectionErrors = JitsiMeetJS.errors.connection;
 export const JitsiConnectionEvents = JitsiMeetJS.events.connection;
 export const JitsiConnectionQualityEvents
     = JitsiMeetJS.events.connectionQuality;
+export const JitsiDetectionEvents = JitsiMeetJS.events.detection;
+export const JitsiE2ePingEvents = JitsiMeetJS.events.e2eping;
 export const JitsiMediaDevicesEvents = JitsiMeetJS.events.mediaDevices;
 export const JitsiParticipantConnectionStatus
     = JitsiMeetJS.constants.participantConnectionStatus;
@@ -24,7 +26,6 @@ export const JitsiTrackEvents = JitsiMeetJS.events.track;
 
 export * from './actions';
 export * from './actionTypes';
-export * from './constants';
 export * from './functions';
 
 import './middleware';

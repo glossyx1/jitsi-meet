@@ -1,7 +1,6 @@
-/* @flow */
+// @flow
 
-import SideContainerToggler
-    from '../../../modules/UI/side_pannels/SideContainerToggler';
+import type { Dispatch } from 'redux';
 
 import {
     clearToolboxTimeout,
@@ -25,7 +24,7 @@ export * from './actions.native';
  * @returns {Function}
  */
 export function dockToolbox(dock: boolean): Function {
-    return (dispatch: Dispatch<*>, getState: Function) => {
+    return (dispatch: Dispatch<any>, getState: Function) => {
         if (interfaceConfig.filmStripOnly) {
             return;
         }
@@ -73,7 +72,7 @@ export function fullScreenChanged(fullScreen: boolean) {
  * @returns {Function}
  */
 export function hideToolbox(force: boolean = false): Function {
-    return (dispatch: Dispatch<*>, getState: Function) => {
+    return (dispatch: Dispatch<any>, getState: Function) => {
         const state = getState();
         const {
             alwaysVisible,
@@ -89,8 +88,8 @@ export function hideToolbox(force: boolean = false): Function {
 
         if (!force
                 && (hovered
-                    || state['features/base/jwt'].calleeInfoVisible
-                    || SideContainerToggler.isVisible())) {
+                    || state['features/invite'].calleeInfoVisible
+                    || state['features/chat'].isOpen)) {
             dispatch(
                 setToolboxTimeout(
                     () => dispatch(hideToolbox()),
@@ -124,7 +123,7 @@ export function setFullScreen(fullScreen: boolean) {
  * @returns {Function}
  */
 export function showToolbox(timeout: number = 0): Object {
-    return (dispatch: Dispatch<*>, getState: Function) => {
+    return (dispatch: Dispatch<any>, getState: Function) => {
         const state = getState();
         const {
             alwaysVisible,

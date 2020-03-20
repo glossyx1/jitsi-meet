@@ -2,7 +2,10 @@
 import { toState } from '../base/redux';
 import { parseStandardURIString } from '../base/util';
 import { i18next, DEFAULT_LANGUAGE, LANGUAGES } from '../base/i18n';
-import { getLocalParticipant, PARTICIPANT_ROLE } from '../base/participants';
+import {
+    getLocalParticipant,
+    isLocalParticipantModerator
+} from '../base/participants';
 
 declare var interfaceConfig: Object;
 
@@ -34,7 +37,8 @@ export function normalizeUserInputURL(url: string) {
         const urlRegExp = new RegExp('^(\\w+://)?(.+)$');
         const urlComponents = urlRegExp.exec(url);
 
-        if (!urlComponents[1] || !urlComponents[1].startsWith('http')) {
+        if (urlComponents && (!urlComponents[1]
+                || !urlComponents[1].startsWith('http'))) {
             url = `https://${urlComponents[2]}`;
         }
 
@@ -74,24 +78,30 @@ export function shouldShowOnlyDeviceSelection() {
 export function getMoreTabProps(stateful: Object | Function) {
     const state = toState(stateful);
     const language = i18next.language || DEFAULT_LANGUAGE;
-    const conference = state['features/base/conference'];
+    const {
+        conference,
+        followMeEnabled,
+        startAudioMutedPolicy,
+        startVideoMutedPolicy
+    } = state['features/base/conference'];
+    const followMeActive = Boolean(state['features/follow-me'].moderator);
     const configuredTabs = interfaceConfig.SETTINGS_SECTIONS || [];
-    const localParticipant = getLocalParticipant(state);
-
 
     // The settings sections to display.
-    const showModeratorSettings
-        = configuredTabs.includes('moderator')
-            && localParticipant.role === PARTICIPANT_ROLE.MODERATOR;
+    const showModeratorSettings = Boolean(
+        conference
+            && configuredTabs.includes('moderator')
+            && isLocalParticipantModerator(state));
 
     return {
         currentLanguage: language,
-        followMeEnabled: Boolean(conference.followMeEnabled),
+        followMeActive: Boolean(conference && followMeActive),
+        followMeEnabled: Boolean(conference && followMeEnabled),
         languages: LANGUAGES,
         showLanguageSettings: configuredTabs.includes('language'),
         showModeratorSettings,
-        startAudioMuted: Boolean(conference.startAudioMutedPolicy),
-        startVideoMuted: Boolean(conference.startVideoMutedPolicy)
+        startAudioMuted: Boolean(conference && startAudioMutedPolicy),
+        startVideoMuted: Boolean(conference && startVideoMutedPolicy)
     };
 }
 
@@ -106,12 +116,16 @@ export function getMoreTabProps(stateful: Object | Function) {
  */
 export function getProfileTabProps(stateful: Object | Function) {
     const state = toState(stateful);
-    const conference = state['features/base/conference'];
+    const {
+        authEnabled,
+        authLogin,
+        conference
+    } = state['features/base/conference'];
     const localParticipant = getLocalParticipant(state);
 
     return {
-        authEnabled: conference.authEnabled,
-        authLogin: conference.authLogin,
+        authEnabled: Boolean(conference && authEnabled),
+        authLogin,
         displayName: localParticipant.name,
         email: localParticipant.email
     };

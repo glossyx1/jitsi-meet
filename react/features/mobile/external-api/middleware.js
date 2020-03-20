@@ -1,24 +1,33 @@
 // @flow
 
-import { NativeModules } from 'react-native';
-
-import { getAppProp } from '../../app';
 import {
     CONFERENCE_FAILED,
     CONFERENCE_JOINED,
     CONFERENCE_LEFT,
     CONFERENCE_WILL_JOIN,
-    CONFERENCE_WILL_LEAVE,
     JITSI_CONFERENCE_URL_KEY,
     SET_ROOM,
     forEachConference,
     isRoomValid
 } from '../../base/conference';
 import { LOAD_CONFIG_ERROR } from '../../base/config';
-import { CONNECTION_FAILED } from '../../base/connection';
+import {
+    CONNECTION_DISCONNECTED,
+    CONNECTION_FAILED,
+    JITSI_CONNECTION_CONFERENCE_KEY,
+    JITSI_CONNECTION_URL_KEY,
+    getURLWithoutParams
+} from '../../base/connection';
 import { MiddlewareRegistry } from '../../base/redux';
-import { toURLString } from '../../base/util';
 import { ENTER_PICTURE_IN_PICTURE } from '../picture-in-picture';
+
+import { sendEvent } from './functions';
+
+/**
+ * Event which will be emitted on the native side to indicate the conference
+ * has ended either by user request or because an error was produced.
+ */
+const CONFERENCE_TERMINATED = 'CONFERENCE_TERMINATED';
 
 /**
  * Middleware that captures Redux actions and uses the ExternalAPI module to
@@ -56,9 +65,29 @@ MiddlewareRegistry.register(store => next => action => {
     case CONFERENCE_JOINED:
     case CONFERENCE_LEFT:
     case CONFERENCE_WILL_JOIN:
-    case CONFERENCE_WILL_LEAVE:
         _sendConferenceEvent(store, action);
         break;
+
+    case CONNECTION_DISCONNECTED: {
+        // FIXME: This is a hack. See the description in the JITSI_CONNECTION_CONFERENCE_KEY constant definition.
+        // Check if this connection was attached to any conference. If it wasn't, fake a CONFERENCE_TERMINATED event.
+        const { connection } = action;
+        const conference = connection[JITSI_CONNECTION_CONFERENCE_KEY];
+
+        if (!conference) {
+            // This action will arrive late, so the locationURL stored on the state is no longer valid.
+            const locationURL = connection[JITSI_CONNECTION_URL_KEY];
+
+            sendEvent(
+                store,
+                CONFERENCE_TERMINATED,
+                /* data */ {
+                    url: _normalizeUrl(locationURL)
+                });
+        }
+
+        break;
+    }
 
     case CONNECTION_FAILED:
         !action.error.recoverable
@@ -66,18 +95,18 @@ MiddlewareRegistry.register(store => next => action => {
         break;
 
     case ENTER_PICTURE_IN_PICTURE:
-        _sendEvent(store, _getSymbolDescription(type), /* data */ {});
+        sendEvent(store, type, /* data */ {});
         break;
 
     case LOAD_CONFIG_ERROR: {
         const { error, locationURL } = action;
 
-        _sendEvent(
+        sendEvent(
             store,
-            _getSymbolDescription(type),
+            CONFERENCE_TERMINATED,
             /* data */ {
                 error: _toErrorString(error),
-                url: toURLString(locationURL)
+                url: _normalizeUrl(locationURL)
             });
         break;
     }
@@ -111,29 +140,6 @@ function _toErrorString(
 }
 
 /**
- * Gets the description of a specific {@code Symbol}.
- *
- * @param {Symbol} symbol - The {@code Symbol} to retrieve the description of.
- * @private
- * @returns {string} The description of {@code symbol}.
- */
-function _getSymbolDescription(symbol: Symbol) {
-    let description = symbol.toString();
-
-    if (description.startsWith('Symbol(') && description.endsWith(')')) {
-        description = description.slice(7, -1);
-    }
-
-    // The polyfill es6-symbol that we use does not appear to comply with the
-    // Symbol standard and, merely, adds @@ at the beginning of the description.
-    if (description.startsWith('@@')) {
-        description = description.slice(2);
-    }
-
-    return description;
-}
-
-/**
  * If {@link SET_ROOM} action happens for a valid conference room this method
  * will emit an early {@link CONFERENCE_WILL_JOIN} event to let the external API
  * know that a conference is being joined. Before that happens a connection must
@@ -151,12 +157,22 @@ function _maybeTriggerEarlyConferenceWillJoin(store, action) {
     const { locationURL } = store.getState()['features/base/connection'];
     const { room } = action;
 
-    isRoomValid(room) && locationURL && _sendEvent(
+    isRoomValid(room) && locationURL && sendEvent(
         store,
-        _getSymbolDescription(CONFERENCE_WILL_JOIN),
+        CONFERENCE_WILL_JOIN,
         /* data */ {
-            url: toURLString(locationURL)
+            url: _normalizeUrl(locationURL)
         });
+}
+
+/**
+ * Normalizes the given URL for presentation over the external API.
+ *
+ * @param {URL} url -The URL to normalize.
+ * @returns {string} - The normalized URL as a string.
+ */
+function _normalizeUrl(url: URL) {
+    return getURLWithoutParams(url).href;
 }
 
 /**
@@ -171,7 +187,7 @@ function _sendConferenceEvent(
         store: Object,
         action: {
             conference: Object,
-            type: Symbol,
+            type: string,
             url: ?string
         }) {
     const { conference, type, ...data } = action;
@@ -180,15 +196,30 @@ function _sendConferenceEvent(
     // instance. The external API cannot transport such an object so we have to
     // transport an "equivalent".
     if (conference) {
-        data.url = toURLString(conference[JITSI_CONFERENCE_URL_KEY]);
+        data.url = _normalizeUrl(conference[JITSI_CONFERENCE_URL_KEY]);
     }
 
-    _swallowEvent(store, action, data)
-        || _sendEvent(store, _getSymbolDescription(type), data);
+    if (_swallowEvent(store, action, data)) {
+        return;
+    }
+
+    let type_;
+
+    switch (type) {
+    case CONFERENCE_FAILED:
+    case CONFERENCE_LEFT:
+        type_ = CONFERENCE_TERMINATED;
+        break;
+    default:
+        type_ = type;
+        break;
+    }
+
+    sendEvent(store, type_, data);
 }
 
 /**
- * Sends {@link CONFERENCE_FAILED} event when the {@link CONNECTION_FAILED}
+ * Sends {@link CONFERENCE_TERMINATED} event when the {@link CONNECTION_FAILED}
  * occurs. It should be done only if the connection fails before the conference
  * instance is created. Otherwise the eventual failure event is supposed to be
  * emitted by the base/conference feature.
@@ -208,35 +239,13 @@ function _sendConferenceFailedOnConnectionError(store, action) {
             // If there's any conference in the  base/conference state then the
             // base/conference feature is supposed to emit a failure.
             conference => conference.getConnection() !== connection)
-        && _sendEvent(
+        && sendEvent(
         store,
-        _getSymbolDescription(CONFERENCE_FAILED),
+        CONFERENCE_TERMINATED,
         /* data */ {
-            url: toURLString(locationURL),
+            url: _normalizeUrl(locationURL),
             error: action.error.name
         });
-}
-
-/**
- * Sends a specific event to the native counterpart of the External API. Native
- * apps may listen to such events via the mechanisms provided by the (native)
- * mobile Jitsi Meet SDK.
- *
- * @param {Object} store - The redux store.
- * @param {string} name - The name of the event to send.
- * @param {Object} data - The details/specifics of the event to send determined
- * by/associated with the specified {@code name}.
- * @private
- * @returns {void}
- */
-function _sendEvent(store: Object, name: string, data: Object) {
-    // The JavaScript App needs to provide uniquely identifying information to
-    // the native ExternalAPI module so that the latter may match the former to
-    // the native JitsiMeetView which hosts it.
-    const externalAPIScope = getAppProp(store, 'externalAPIScope');
-
-    externalAPIScope
-        && NativeModules.ExternalAPI.sendEvent(name, data, externalAPIScope);
 }
 
 /**

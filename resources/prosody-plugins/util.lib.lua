@@ -1,6 +1,5 @@
 local jid = require "util.jid";
-local runner, waiter = require "util.async".runner, require "util.async".waiter;
-
+local have_async, async = pcall(require, "util.async");
 local muc_domain_prefix
     = module:get_option_string("muc_mapper_domain_prefix", "conference");
 
@@ -60,16 +59,42 @@ function get_room_from_jid(room_jid)
     end
 end
 
+function async_handler_wrapper(event, handler)
+    if not have_async then
+        module:log("error", "requires a version of Prosody with util.async");
+        return nil;
+    end
 
-function wrap_async_run(event,handler)
+    local runner = async.runner;
+    
     -- Grab a local response so that we can send the http response when
     -- the handler is done.
     local response = event.response;
-    local async_func = runner(function (event)
-          response.status_code = handler(event);
-          -- Send the response to the waiting http client.
-          response:send();
-    end)
+    local async_func = runner(
+        function (event)
+            local result = handler(event)
+
+            -- If there is a status code in the result from the
+            -- wrapped handler then add it to the response.
+            if tonumber(result.status_code) ~= nil then
+                response.status_code = result.status_code
+            end
+
+            -- If there are headers in the result from the
+            -- wrapped handler then add them to the response.
+            if result.headers ~= nil then
+                response.headers = result.headers
+            end
+
+            -- Send the response to the waiting http client with
+            -- or without the body from the wrapped handler.
+            if result.body ~= nil then
+                response:send(result.body)
+            else
+                response:send();
+            end
+        end
+    )
     async_func:run(event)
     -- return true to keep the client http connection open.
     return true;
@@ -150,7 +175,7 @@ end
 return {
     is_feature_allowed = is_feature_allowed;
     get_room_from_jid = get_room_from_jid;
-    wrap_async_run = wrap_async_run;
+    async_handler_wrapper = async_handler_wrapper;
     room_jid_match_rewrite = room_jid_match_rewrite;
     update_presence_identity = update_presence_identity;
 };

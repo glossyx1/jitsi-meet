@@ -19,15 +19,14 @@ package org.jitsi.meet.sdk;
 import android.content.Context;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
-import android.os.Handler;
-import android.os.Looper;
-import android.util.Log;
 
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
 import com.facebook.react.bridge.ReactMethod;
+import com.facebook.react.module.annotations.ReactModule;
 
+import org.jitsi.meet.sdk.log.JitsiMeetLogger;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -36,37 +35,37 @@ import java.net.NetworkInterface;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Enumeration;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Module exposing WiFi statistics.
  *
- * Gathers rssi, signal in percentage, timestamp and the addresses
- * of the wifi device.
+ * Gathers rssi, signal in percentage, timestamp and the addresses of the wifi
+ * device.
  */
-class WiFiStatsModule extends ReactContextBaseJavaModule {
-    /**
-     * The name of {@code WiFiStatsModule} to be used in the React Native
-     * bridge.
-     */
-    private static final String MODULE_NAME = "WiFiStats";
+@ReactModule(name = WiFiStatsModule.NAME)
+class WiFiStatsModule
+    extends ReactContextBaseJavaModule {
+
+    public static final String NAME = "WiFiStats";
 
     /**
      * The {@code Log} tag {@code WiFiStatsModule} is to log messages with.
      */
-    static final String TAG = MODULE_NAME;
+    static final String TAG = NAME;
 
     /**
-     * The scale used for the signal value.
-     * A level of the signal, given in the range
-     * of 0 to SIGNAL_LEVEL_SCALE-1 (both inclusive).
+     * The scale used for the signal value. A level of the signal, given in the
+     * range of 0 to SIGNAL_LEVEL_SCALE-1 (both inclusive).
      */
     public final static int SIGNAL_LEVEL_SCALE = 101;
 
     /**
-     * {@link Handler} for running all operations on the main thread.
+     * {@link ExecutorService} for running all operations on a dedicated thread.
      */
-    private final Handler mainThreadHandler
-            = new Handler(Looper.getMainLooper());
+    private static final ExecutorService executor
+        = Executors.newSingleThreadExecutor();
 
     /**
      * Initializes a new module instance. There shall be a single instance of
@@ -86,7 +85,7 @@ class WiFiStatsModule extends ReactContextBaseJavaModule {
      */
     @Override
     public String getName() {
-        return MODULE_NAME;
+        return NAME;
     }
 
     /**
@@ -119,7 +118,6 @@ class WiFiStatsModule extends ReactContextBaseJavaModule {
             @Override
             public void run() {
                 try {
-
                     Context context
                         = getReactApplicationContext().getApplicationContext();
                     WifiManager wifiManager
@@ -146,8 +144,7 @@ class WiFiStatsModule extends ReactContextBaseJavaModule {
                     JSONObject result = new JSONObject();
                     result.put("rssi", rssi)
                         .put("signal", signalLevel)
-                        .put("timestamp",
-                                String.valueOf(System.currentTimeMillis()));
+                        .put("timestamp", System.currentTimeMillis());
 
                     JSONArray addresses = new JSONArray();
 
@@ -187,22 +184,20 @@ class WiFiStatsModule extends ReactContextBaseJavaModule {
 
                         }
                     } catch (SocketException e) {
-                        Log.wtf(TAG,
-                            "Unable to NetworkInterface.getNetworkInterfaces()"
-                        );
+                        JitsiMeetLogger.e(e, TAG + " Unable to NetworkInterface.getNetworkInterfaces()");
                     }
 
                     result.put("addresses", addresses);
                     promise.resolve(result.toString());
 
-                    Log.d(TAG, "WiFi stats: " + result.toString());
+                    JitsiMeetLogger.d(TAG + " WiFi stats: " + result.toString());
                 } catch (Throwable e) {
-                    Log.e(TAG, "Failed to obtain wifi stats", e);
+                    JitsiMeetLogger.e(e, TAG + " Failed to obtain wifi stats");
                     promise.reject(
                         new Exception("Failed to obtain wifi stats"));
                 }
             }
         };
-        mainThreadHandler.post(r);
+        executor.execute(r);
     }
 }

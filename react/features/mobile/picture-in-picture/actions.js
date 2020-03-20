@@ -1,11 +1,13 @@
 // @flow
 
 import { NativeModules } from 'react-native';
+import type { Dispatch } from 'redux';
 
-import { getAppProp } from '../../app';
+import { PIP_ENABLED, getFeatureFlag } from '../../base/flags';
 import { Platform } from '../../base/react';
 
 import { ENTER_PICTURE_IN_PICTURE } from './actionTypes';
+import logger from './logger';
 
 /**
  * Enters (or rather initiates entering) picture-in-picture.
@@ -18,11 +20,11 @@ import { ENTER_PICTURE_IN_PICTURE } from './actionTypes';
  * @returns {Function}
  */
 export function enterPictureInPicture() {
-    return (dispatch: Dispatch, getState: Function) => {
+    return (dispatch: Dispatch<any>, getState: Function) => {
         // XXX At the time of this writing this action can only be dispatched by
         // the button which is on the conference view, which means that it's
         // fine to enter PiP mode.
-        if (getAppProp(getState, 'pictureInPictureEnabled')) {
+        if (getFeatureFlag(getState, PIP_ENABLED)) {
             const { PictureInPicture } = NativeModules;
             const p
                 = Platform.OS === 'android'
@@ -34,7 +36,7 @@ export function enterPictureInPicture() {
 
             p.then(
                 () => dispatch({ type: ENTER_PICTURE_IN_PICTURE }),
-                e => console.warn(`Error entering PiP mode: ${e}`));
+                e => logger.warn(`Error entering PiP mode: ${e}`));
         }
     };
 }

@@ -1,10 +1,17 @@
 // @flow
 
 import React, { Component } from 'react';
-import { connect } from 'react-redux';
 
 import { VIDEO_QUALITY_LEVELS } from '../../base/conference';
 import { translate } from '../../base/i18n';
+import {
+    Icon,
+    IconVideoQualityAudioOnly,
+    IconVideoQualityHD,
+    IconVideoQualityLD,
+    IconVideoQualitySD
+} from '../../base/icons';
+import { connect } from '../../base/redux';
 
 /**
  * A map of of selectable receive resolutions to corresponding icons.
@@ -13,9 +20,9 @@ import { translate } from '../../base/i18n';
  * @type {Object}
  */
 const VIDEO_QUALITY_TO_ICON = {
-    [VIDEO_QUALITY_LEVELS.HIGH]: 'icon-HD',
-    [VIDEO_QUALITY_LEVELS.STANDARD]: 'icon-SD',
-    [VIDEO_QUALITY_LEVELS.LOW]: 'icon-LD'
+    [VIDEO_QUALITY_LEVELS.HIGH]: IconVideoQualityHD,
+    [VIDEO_QUALITY_LEVELS.STANDARD]: IconVideoQualitySD,
+    [VIDEO_QUALITY_LEVELS.LOW]: IconVideoQualityLD
 };
 
 /**
@@ -33,7 +40,7 @@ type Props = {
      * The currently configured maximum quality resolution to be received from
      * remote participants.
      */
-    _receiveVideoQuality: number,
+    _receiverVideoQuality: number,
 
     /**
      * Callback to invoke when {@link OverflowMenuVideoQualityItem} is clicked.
@@ -61,10 +68,10 @@ class OverflowMenuVideoQualityItem extends Component<Props> {
      * @returns {ReactElement}
      */
     render() {
-        const { _audioOnly, _receiveVideoQuality } = this.props;
-        const icon = _audioOnly || !_receiveVideoQuality
-            ? 'icon-AUD'
-            : VIDEO_QUALITY_TO_ICON[_receiveVideoQuality];
+        const { _audioOnly, _receiverVideoQuality } = this.props;
+        const icon = _audioOnly || !_receiverVideoQuality
+            ? IconVideoQualityAudioOnly
+            : VIDEO_QUALITY_TO_ICON[_receiverVideoQuality];
 
         return (
             <li
@@ -73,7 +80,7 @@ class OverflowMenuVideoQualityItem extends Component<Props> {
                 className = 'overflow-menu-item'
                 onClick = { this.props.onClick }>
                 <span className = 'overflow-menu-item-icon'>
-                    <i className = { icon } />
+                    <Icon src = { icon } />
                 </span>
                 <span className = 'profile-text'>
                     { this.props.t('toolbar.callQuality') }
@@ -91,14 +98,14 @@ class OverflowMenuVideoQualityItem extends Component<Props> {
  * @private
  * @returns {{
  *     _audioOnly: boolean,
- *     _receiveVideoQuality: number
+ *     _receiverVideoQuality: number
  * }}
  */
 function _mapStateToProps(state) {
     return {
-        _audioOnly: state['features/base/conference'].audioOnly,
-        _receiveVideoQuality:
-            state['features/base/conference'].receiveVideoQuality
+        _audioOnly: state['features/base/audio-only'].enabled,
+        _receiverVideoQuality:
+            state['features/base/conference'].preferredReceiverVideoQuality
     };
 }
 

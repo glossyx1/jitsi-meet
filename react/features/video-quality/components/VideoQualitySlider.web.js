@@ -1,21 +1,17 @@
-import InlineMessage from '@atlaskit/inline-message';
-import PropTypes from 'prop-types';
-import React, { Component } from 'react';
-import { connect } from 'react-redux';
+// @flow
 
-import {
-    createToolbarEvent,
-    sendAnalytics
-} from '../../analytics';
-import {
-    VIDEO_QUALITY_LEVELS,
-    setAudioOnly,
-    setReceiveVideoQuality
-} from '../../base/conference';
+import InlineMessage from '@atlaskit/inline-message';
+import React, { Component } from 'react';
+import type { Dispatch } from 'redux';
+
+import { createToolbarEvent, sendAnalytics } from '../../analytics';
+import { setAudioOnly } from '../../base/audio-only';
+import { VIDEO_QUALITY_LEVELS, setPreferredReceiverVideoQuality } from '../../base/conference';
 import { translate } from '../../base/i18n';
 import JitsiMeetJS from '../../base/lib-jitsi-meet';
+import { connect } from '../../base/redux';
 
-const logger = require('jitsi-meet-logger').getLogger(__filename);
+import logger from '../logger';
 
 const {
     HIGH,
@@ -40,50 +36,51 @@ const createEvent = function(quality) {
 };
 
 /**
+ * The type of the React {@code Component} props of {@link VideoQualitySlider}.
+ */
+type Props = {
+
+    /**
+     * Whether or not the conference is in audio only mode.
+     */
+    _audioOnly: Boolean,
+
+    /**
+     * Whether or not the conference is in peer to peer mode.
+     */
+    _p2p: Boolean,
+
+    /**
+     * The currently configured maximum quality resolution to be received
+     * from remote participants.
+     */
+    _receiverVideoQuality: Number,
+
+    /**
+     * Whether or not displaying video is supported in the current
+     * environment. If false, the slider will be disabled.
+     */
+    _videoSupported: Boolean,
+
+    /**
+     * Invoked to request toggling of audio only mode.
+     */
+    dispatch: Dispatch<any>,
+
+    /**
+     * Invoked to obtain translated strings.
+     */
+    t: Function
+};
+
+/**
  * Implements a React {@link Component} which displays a slider for selecting a
  * new receive video quality.
  *
  * @extends Component
  */
-class VideoQualitySlider extends Component {
-    /**
-     * {@code VideoQualitySlider}'s property types.
-     *
-     * @static
-     */
-    static propTypes = {
-        /**
-         * Whether or not the conference is in audio only mode.
-         */
-        _audioOnly: PropTypes.bool,
-
-        /**
-         * Whether or not the conference is in peer to peer mode.
-         */
-        _p2p: PropTypes.bool,
-
-        /**
-         * The currently configured maximum quality resolution to be received
-         * from remote participants.
-         */
-        _receiveVideoQuality: PropTypes.number,
-
-        /**
-         * Whether or not displaying video is supported in the current
-         * environment. If false, the slider will be disabled.
-         */
-        _videoSupported: PropTypes.bool,
-
-        /**
-         * Invoked to request toggling of audio only mode.
-         */
-        dispatch: PropTypes.func,
-
-        /**
-         * Invoked to obtain translated strings.
-         */
-        t: PropTypes.func
-    };
+class VideoQualitySlider extends Component<Props> {
+    _sliderOptions: Array<Object>;
 
     /**
      * Initializes a new {@code VideoQualitySlider} instance.
@@ -261,6 +258,8 @@ class VideoQualitySlider extends Component {
         });
     }
 
+    _enableAudioOnly: () => void;
+
     /**
      * Dispatches an action to enable audio only mode.
      *
@@ -273,6 +272,8 @@ class VideoQualitySlider extends Component {
         this.props.dispatch(setAudioOnly(true));
     }
 
+    _enableHighDefinition: () => void;
+
     /**
      * Handles the action of the high definition video being selected.
      * Dispatches an action to receive high quality video from remote
@@ -284,8 +285,10 @@ class VideoQualitySlider extends Component {
     _enableHighDefinition() {
         sendAnalytics(createEvent('high'));
         logger.log('Video quality: high enabled');
-        this.props.dispatch(setReceiveVideoQuality(HIGH));
+        this._setPreferredVideoQuality(HIGH);
     }
+
+    _enableLowDefinition: () => void;
 
     /**
      * Dispatches an action to receive low quality video from remote
@@ -297,8 +300,10 @@ class VideoQualitySlider extends Component {
     _enableLowDefinition() {
         sendAnalytics(createEvent('low'));
         logger.log('Video quality: low enabled');
-        this.props.dispatch(setReceiveVideoQuality(LOW));
+        this._setPreferredVideoQuality(LOW);
     }
+
+    _enableStandardDefinition: () => void;
 
     /**
      * Dispatches an action to receive standard quality video from remote
@@ -310,7 +315,7 @@ class VideoQualitySlider extends Component {
     _enableStandardDefinition() {
         sendAnalytics(createEvent('standard'));
         logger.log('Video quality: standard enabled');
-        this.props.dispatch(setReceiveVideoQuality(STANDARD));
+        this._setPreferredVideoQuality(STANDARD);
     }
 
     /**
@@ -321,7 +326,7 @@ class VideoQualitySlider extends Component {
      * @returns {void}
      */
     _mapCurrentQualityToSliderValue() {
-        const { _audioOnly, _receiveVideoQuality } = this.props;
+        const { _audioOnly, _receiverVideoQuality } = this.props;
         const { _sliderOptions } = this;
 
         if (_audioOnly) {
@@ -332,10 +337,12 @@ class VideoQualitySlider extends Component {
         }
 
         const matchingOption = _sliderOptions.find(
-            ({ videoQuality }) => videoQuality === _receiveVideoQuality);
+            ({ videoQuality }) => videoQuality === _receiverVideoQuality);
 
         return _sliderOptions.indexOf(matchingOption);
     }
+
+    _onSliderChange: () => void;
 
     /**
      * Invokes a callback when the selected video quality changes.
@@ -345,7 +352,7 @@ class VideoQualitySlider extends Component {
      * @returns {void}
      */
     _onSliderChange(event) {
-        const { _audioOnly, _receiveVideoQuality } = this.props;
+        const { _audioOnly, _receiverVideoQuality } = this.props;
         const {
             audioOnly,
             onSelect,
@@ -355,11 +362,28 @@ class VideoQualitySlider extends Component {
         // Take no action if the newly chosen option does not change audio only
         // or video quality state.
         if ((_audioOnly && audioOnly)
-            || (!_audioOnly && videoQuality === _receiveVideoQuality)) {
+            || (!_audioOnly && videoQuality === _receiverVideoQuality)) {
             return;
         }
 
         onSelect();
+    }
+
+    /**
+     * Helper for changing the preferred maximum video quality to receive and
+     * disable audio only.
+     *
+     * @param {number} qualityLevel - The new maximum video quality. Should be
+     * a value enumerated in {@code VIDEO_QUALITY_LEVELS}.
+     * @private
+     * @returns {void}
+     */
+    _setPreferredVideoQuality(qualityLevel) {
+        this.props.dispatch(setPreferredReceiverVideoQuality(qualityLevel));
+
+        if (this.props._audioOnly) {
+            this.props.dispatch(setAudioOnly(false));
+        }
     }
 }
 
@@ -372,20 +396,17 @@ class VideoQualitySlider extends Component {
  * @returns {{
  *     _audioOnly: boolean,
  *     _p2p: boolean,
- *     _receiveVideoQuality: boolean
+ *     _receiverVideoQuality: boolean
  * }}
  */
 function _mapStateToProps(state) {
-    const {
-        audioOnly,
-        p2p,
-        receiveVideoQuality
-    } = state['features/base/conference'];
+    const { enabled: audioOnly } = state['features/base/audio-only'];
+    const { p2p, preferredReceiverVideoQuality } = state['features/base/conference'];
 
     return {
         _audioOnly: audioOnly,
         _p2p: p2p,
-        _receiveVideoQuality: receiveVideoQuality,
+        _receiverVideoQuality: preferredReceiverVideoQuality,
         _videoSupported: JitsiMeetJS.mediaDevices.supportsVideo()
     };
 }

@@ -1,15 +1,18 @@
 // @flow
-import React, { Component } from 'react';
-import { connect } from 'react-redux';
 
-import { appNavigate } from '../../app';
-import {
-    getLocalizedDateFormatter,
-    getLocalizedDurationFormatter,
-    translate
-} from '../../base/i18n';
-import { NavigateSectionList } from '../../base/react';
-import { parseURIString } from '../../base/util';
+import React from 'react';
+import type { Dispatch } from 'redux';
+
+import { getDefaultURL } from '../../app';
+import { translate } from '../../base/i18n';
+import { NavigateSectionList, type Section } from '../../base/react';
+import { connect } from '../../base/redux';
+import { ColorPalette } from '../../base/styles';
+import { showDialInSummary } from '../../invite';
+
+import { deleteRecentListEntry } from '../actions';
+import { isRecentListEnabled, toDisplayableList } from '../functions';
+import AbstractRecentList from './AbstractRecentList';
 
 /**
  * The type of the React {@code Component} props of {@link RecentList}
@@ -24,7 +27,7 @@ type Props = {
     /**
      * The redux store's {@code dispatch} function.
      */
-    dispatch: Dispatch<*>,
+    dispatch: Dispatch<any>,
 
     /**
      * The translate function.
@@ -39,14 +42,17 @@ type Props = {
     /**
      * The recent list from the Redux store.
      */
-    _recentList: Array<Object>
+    _recentList: Array<Section>
 };
 
 /**
- * The native container rendering the list of the recently joined rooms.
+ * A class that renders the list of the recently joined rooms.
  *
  */
-class RecentList extends Component<Props> {
+class RecentList extends AbstractRecentList<Props> {
+    _getRenderListEmptyComponent: () => React$Node;
+    _onPress: string => {};
+
     /**
      * Initializes a new {@code RecentList} instance.
      *
@@ -55,11 +61,8 @@ class RecentList extends Component<Props> {
     constructor(props: Props) {
         super(props);
 
-        this._onPress = this._onPress.bind(this);
-        this._toDateString = this._toDateString.bind(this);
-        this._toDurationString = this._toDurationString.bind(this);
-        this._toDisplayableItem = this._toDisplayableItem.bind(this);
-        this._toDisplayableList = this._toDisplayableList.bind(this);
+        this._onDelete = this._onDelete.bind(this);
+        this._onShowDialInInfo = this._onShowDialInInfo.bind(this);
     }
 
     /**
@@ -68,150 +71,60 @@ class RecentList extends Component<Props> {
      * @inheritdoc
      */
     render() {
-        const { disabled } = this.props;
+        if (!isRecentListEnabled()) {
+            return null;
+        }
+        const {
+            disabled,
+            t,
+            _defaultServerURL,
+            _recentList
+        } = this.props;
+        const recentList = toDisplayableList(_recentList, t, _defaultServerURL);
+        const slideActions = [ {
+            backgroundColor: ColorPalette.blue,
+            onPress: this._onShowDialInInfo,
+            text: t('welcomepage.info')
+        }, {
+            backgroundColor: 'red',
+            onPress: this._onDelete,
+            text: t('welcomepage.recentListDelete')
+        } ];
 
         return (
             <NavigateSectionList
                 disabled = { disabled }
                 onPress = { this._onPress }
-                sections = { this._toDisplayableList() } />
+                renderListEmptyComponent
+                    = { this._getRenderListEmptyComponent() }
+                sections = { recentList }
+                slideActions = { slideActions } />
         );
     }
 
-    _onPress: string => Function;
+    _onDelete: Object => void
 
     /**
-     * Handles the list's navigate action.
+     * Callback for the delete action of the list.
      *
-     * @private
-     * @param {string} url - The url string to navigate to.
+     * @param {Object} itemId - The ID of the entry thats deletion is
+     * requested.
      * @returns {void}
      */
-    _onPress(url) {
-        const { dispatch } = this.props;
-
-        dispatch(appNavigate(url));
+    _onDelete(itemId) {
+        this.props.dispatch(deleteRecentListEntry(itemId));
     }
 
-    _toDisplayableItem: Object => Object;
+    _onShowDialInInfo: Object => void
 
     /**
-     * Creates a displayable list item of a recent list entry.
+     * Callback for the dial-in info action of the list.
      *
-     * @private
-     * @param {Object} item - The recent list entry.
-     * @returns {Object}
+     * @param {Object} itemId - The ID of the entry for which we'd like to show the dial in numbers.
+     * @returns {void}
      */
-    _toDisplayableItem(item) {
-        const { _defaultServerURL } = this.props;
-        const location = parseURIString(item.conference);
-        const baseURL = `${location.protocol}//${location.host}`;
-        const serverName = baseURL === _defaultServerURL ? null : location.host;
-
-        return {
-            colorBase: serverName,
-            key: `key-${item.conference}-${item.date}`,
-            lines: [
-                this._toDateString(item.date),
-                this._toDurationString(item.duration),
-                serverName
-            ],
-            title: location.room,
-            url: item.conference
-        };
-    }
-
-    _toDisplayableList: () => Array<Object>;
-
-    /**
-     * Transforms the history list to a displayable list
-     * with sections.
-     *
-     * @private
-     * @returns {Array<Object>}
-     */
-    _toDisplayableList() {
-        const { _recentList, t } = this.props;
-        const { createSection } = NavigateSectionList;
-        const todaySection = createSection(t('recentList.today'), 'today');
-        const yesterdaySection
-            = createSection(t('recentList.yesterday'), 'yesterday');
-        const earlierSection
-            = createSection(t('recentList.earlier'), 'earlier');
-        const today = new Date().toDateString();
-        const yesterdayDate = new Date();
-
-        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-
-        const yesterday = yesterdayDate.toDateString();
-
-        for (const item of _recentList) {
-            const itemDay = new Date(item.date).toDateString();
-            const displayableItem = this._toDisplayableItem(item);
-
-            if (itemDay === today) {
-                todaySection.data.push(displayableItem);
-            } else if (itemDay === yesterday) {
-                yesterdaySection.data.push(displayableItem);
-            } else {
-                earlierSection.data.push(displayableItem);
-            }
-        }
-
-        const displayableList = [];
-
-        if (todaySection.data.length) {
-            todaySection.data.reverse();
-            displayableList.push(todaySection);
-        }
-        if (yesterdaySection.data.length) {
-            yesterdaySection.data.reverse();
-            displayableList.push(yesterdaySection);
-        }
-        if (earlierSection.data.length) {
-            earlierSection.data.reverse();
-            displayableList.push(earlierSection);
-        }
-
-        return displayableList;
-    }
-
-    _toDateString: number => string;
-
-    /**
-     * Generates a date string for the item.
-     *
-     * @private
-     * @param {number} itemDate - The item's timestamp.
-     * @returns {string}
-     */
-    _toDateString(itemDate) {
-        const date = new Date(itemDate);
-        const m = getLocalizedDateFormatter(itemDate);
-
-        if (date.toDateString() === new Date().toDateString()) {
-            // The date is today, we use fromNow format.
-            return m.fromNow();
-        }
-
-        return m.format('lll');
-    }
-
-    _toDurationString: number => string;
-
-    /**
-     * Generates a duration string for the item.
-     *
-     * @private
-     * @param {number} duration - The item's duration.
-     * @returns {string}
-     */
-    _toDurationString(duration) {
-        if (duration) {
-            return getLocalizedDurationFormatter(duration).humanize();
-        }
-
-        return null;
+    _onShowDialInInfo(itemId) {
+        this.props.dispatch(showDialInSummary(itemId.url));
     }
 }
 
@@ -226,7 +139,7 @@ class RecentList extends Component<Props> {
  */
 export function _mapStateToProps(state: Object) {
     return {
-        _defaultServerURL: state['features/app'].app._getDefaultURL(),
+        _defaultServerURL: getDefaultURL(state),
         _recentList: state['features/recent-list']
     };
 }

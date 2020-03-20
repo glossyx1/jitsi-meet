@@ -1,20 +1,18 @@
 // @flow
 
-import { connect } from 'react-redux';
-
 import {
     ACTION_SHORTCUT_TRIGGERED,
     AUDIO_MUTE,
     createShortcutEvent,
-    createToolbarEvent,
     sendAnalytics
 } from '../../analytics';
 import { translate } from '../../base/i18n';
-import { MEDIA_TYPE, setAudioMuted } from '../../base/media';
+import { MEDIA_TYPE } from '../../base/media';
+import { connect } from '../../base/redux';
 import { AbstractAudioMuteButton } from '../../base/toolbox';
 import type { AbstractButtonProps } from '../../base/toolbox';
 import { isLocalTrackMuted } from '../../base/tracks';
-import UIEvents from '../../../../service/UI/UIEvents';
+import { muteLocal } from '../../remote-video-menu/actions';
 
 declare var APP: Object;
 
@@ -27,6 +25,11 @@ type Props = AbstractButtonProps & {
      * Whether audio is currently muted or not.
      */
     _audioMuted: boolean,
+
+    /**
+     * Whether the button is disabled.
+     */
+    _disabled: boolean,
 
     /**
      * The redux {@code dispatch} function.
@@ -121,13 +124,16 @@ class AudioMuteButton extends AbstractAudioMuteButton<Props, *> {
      * @returns {void}
      */
     _setAudioMuted(audioMuted: boolean) {
-        sendAnalytics(createToolbarEvent(AUDIO_MUTE, { enable: audioMuted }));
-        this.props.dispatch(setAudioMuted(audioMuted, /* ensureTrack */ true));
+        this.props.dispatch(muteLocal(audioMuted));
+    }
 
-        // FIXME: The old conference logic as well as the shared video feature
-        // still rely on this event being emitted.
-        typeof APP === 'undefined'
-            || APP.UI.emitEvent(UIEvents.AUDIO_MUTED, audioMuted, true);
+    /**
+     * Return a boolean value indicating if this button is disabled or not.
+     *
+     * @returns {boolean}
+     */
+    _isDisabled() {
+        return this.props._disabled;
     }
 }
 
@@ -145,7 +151,8 @@ function _mapStateToProps(state): Object {
     const tracks = state['features/base/tracks'];
 
     return {
-        _audioMuted: isLocalTrackMuted(tracks, MEDIA_TYPE.AUDIO)
+        _audioMuted: isLocalTrackMuted(tracks, MEDIA_TYPE.AUDIO),
+        _disabled: state['features/base/config'].startSilent
     };
 }
 

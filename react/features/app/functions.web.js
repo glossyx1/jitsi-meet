@@ -1,88 +1,27 @@
 // @flow
 
 import { toState } from '../base/redux';
-import { getDeepLinkingPage } from '../deep-linking';
-import { UnsupportedDesktopBrowser } from '../unsupported-browser';
+import { getServerURL } from '../base/settings';
 
-import {
-    // eslint-disable-next-line camelcase
-    _getRouteToRender as _super_getRouteToRender
-} from './getRouteToRender';
-
-declare var APP: Object;
 declare var interfaceConfig: Object;
-declare var loggingConfig: Object;
 
 /**
- * Array of rules defining whether we should {@link _interceptComponent} to
- * render.
+ * Retrieves the default URL for the app. This can either come from a prop to
+ * the root App component or be configured in the settings.
  *
- * @private
- * @param {Object} state - Object containing current redux state.
- * @returns {Promise<ReactElement>|void}
- * @type {Function[]}
+ * @param {Function|Object} stateful - The redux store or {@code getState}
+ * function.
+ * @returns {string} - Default URL for the app.
  */
-const _INTERCEPT_COMPONENT_RULES = [
-    getDeepLinkingPage,
-    state => {
-        const { webRTCReady } = state['features/base/lib-jitsi-meet'];
+export function getDefaultURL(stateful: Function | Object) {
+    const state = toState(stateful);
+    const { href } = window.location;
 
-        if (webRTCReady === false) {
-            return Promise.resolve(UnsupportedDesktopBrowser);
-        }
-
-        return Promise.resolve();
+    if (href) {
+        return href;
     }
-];
 
-export * from './functions.any';
-
-/**
- * Determines which route is to be rendered in order to depict a specific redux
- * store.
- *
- * @param {(Object|Function)} stateOrGetState - The redux state or
- * {@link getState} function.
- * @returns {Promise<Route>}
- */
-export function _getRouteToRender(stateOrGetState: Object | Function): Object {
-    const route = _super_getRouteToRender(stateOrGetState);
-
-    // Intercepts route components if any of component interceptor rules is
-    // satisfied.
-    return _interceptComponent(stateOrGetState, route.component).then(
-        (component: React$Element<*>) => {
-            route.component = component;
-
-            return route;
-        }, () => Promise.resolve(route));
-}
-
-/**
- * Intercepts route components based on a {@link _INTERCEPT_COMPONENT_RULES}.
- *
- * @param {Object|Function} stateOrGetState - The redux state or
- * {@link getState} function.
- * @param {ReactElement} component - Current route component to render.
- * @private
- * @returns {Promise<ReactElement>} If any of the pre-defined rules is
- * satisfied, returns intercepted component.
- */
-function _interceptComponent(
-        stateOrGetState: Object | Function,
-        component: React$Element<*>) {
-    const state = toState(stateOrGetState);
-
-    const promises = [];
-
-    _INTERCEPT_COMPONENT_RULES.forEach(rule => {
-        promises.push(rule(state));
-    });
-
-    return Promise.all(promises).then(
-        results =>
-            results.find(result => typeof result !== 'undefined') || component,
-        () => Promise.resolve(component));
+    return getServerURL(state);
 }
 
 /**

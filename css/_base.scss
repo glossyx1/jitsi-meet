@@ -33,6 +33,15 @@ body {
     }
 }
 
+.jitsi-icon svg {
+    fill: white;
+}
+
+.jitsi-icon.gray svg {
+    fill: #5E6D7A;
+    cursor: pointer;
+}
+
 /**
  * AtlasKitThemeProvider sets a background color on an app-wrapping div, thereby
  * preventing transparency in filmstrip-only mode. The selector chosen to
@@ -53,10 +62,6 @@ body, input, textarea, keygen, select, button {
 
 #nowebrtc {
     display:none;
-}
-
-.no-fa-video-camera, .fa-microphone-slash {
-    color: #636363;
 }
 
 button, input, select, textarea {
@@ -108,14 +113,15 @@ form {
 }
 
 .leftwatermark {
-    left: $defaultToolbarSize;
-    margin-left: 10px;
+    left: 32px;
+    top: 32px;
     background-image: url($defaultWatermarkLink);
     background-position: center left;
 }
 
 .rightwatermark {
-    right: 15;
+    right: 32px;
+    top: 32px;
     background-position: center right;
 }
 
@@ -160,6 +166,7 @@ form {
 ::-webkit-scrollbar {
     background: transparent;
     width: 7px;
+    height: $scrollHeight;
 }
 
 ::-webkit-scrollbar-button {

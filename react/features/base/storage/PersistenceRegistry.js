@@ -2,7 +2,9 @@
 
 import md5 from 'js-md5';
 
-const logger = require('jitsi-meet-logger').getLogger(__filename);
+import logger from './logger';
+
+declare var __DEV__;
 
 /**
  * The name of the {@code localStorage} store where the app persists its values.
@@ -27,7 +29,7 @@ declare type PersistencyConfigMap = { [name: string]: ElementConfig };
  */
 class PersistenceRegistry {
     _checksum: string;
-
+    _defaultStates: { [name: string ]: ?Object} = {};
     _elements: PersistencyConfigMap = {};
 
     /**
@@ -51,7 +53,8 @@ class PersistenceRegistry {
             const persistedSubtree
                 = this._getPersistedSubtree(
                     subtreeName,
-                    this._elements[subtreeName]);
+                    this._elements[subtreeName],
+                    this._defaultStates[subtreeName]);
 
             if (persistedSubtree !== undefined) {
                 filteredPersistedState[subtreeName] = persistedSubtree;
@@ -86,7 +89,9 @@ class PersistenceRegistry {
         // Initialize the checksum.
         this._checksum = this._calculateChecksum(filteredPersistedState);
 
-        logger.info('redux state rehydrated as', filteredPersistedState);
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            logger.info('redux state rehydrated as', filteredPersistedState);
+        }
 
         return filteredPersistedState;
     }
@@ -112,7 +117,6 @@ class PersistenceRegistry {
                     logger.error(
                         'Error persisting redux subtree',
                         subtreeName,
-                        filteredState[subtreeName],
                         error);
                 }
             }
@@ -128,10 +132,17 @@ class PersistenceRegistry {
      * @param {string} name - The name of the subtree the config belongs to.
      * @param {ElementConfig} config - The config {@code Object}, or
      * {@code boolean} if the entire subtree needs to be persisted.
+     * @param {Object} defaultState - The default state of the component. If
+     * it's provided, the rehydrated state will be merged with it before it gets
+     * pushed into Redux.
      * @returns {void}
      */
-    register(name: string, config?: ElementConfig = true) {
+    register(
+            name: string,
+            config?: ElementConfig = true,
+            defaultState?: Object) {
         this._elements[name] = config;
+        this._defaultStates[name] = defaultState;
     }
 
     /**
@@ -145,7 +156,7 @@ class PersistenceRegistry {
         try {
             return md5.hex(JSON.stringify(state) || '');
         } catch (error) {
-            logger.error('Error calculating checksum for state', state, error);
+            logger.error('Error calculating checksum for state', error);
 
             return '';
         }
@@ -209,10 +220,11 @@ class PersistenceRegistry {
      * @param {string} subtreeName - The name of the subtree.
      * @param {Object} subtreeConfig - The config of the subtree from
      * {@link #_elements}.
+     * @param {Object} subtreeDefaults - The defaults of the persisted subtree.
      * @private
      * @returns {Object}
      */
-    _getPersistedSubtree(subtreeName, subtreeConfig) {
+    _getPersistedSubtree(subtreeName, subtreeConfig, subtreeDefaults) {
         let persistedSubtree = window.localStorage.getItem(subtreeName);
 
         if (persistedSubtree) {
@@ -223,7 +235,8 @@ class PersistenceRegistry {
                     = this._getFilteredSubtree(persistedSubtree, subtreeConfig);
 
                 if (filteredSubtree !== undefined) {
-                    return filteredSubtree;
+                    return this._mergeDefaults(
+                        filteredSubtree, subtreeDefaults);
                 }
             } catch (error) {
                 logger.error(
@@ -235,6 +248,32 @@ class PersistenceRegistry {
         }
 
         return undefined;
+    }
+
+    /**
+     * Merges the persisted subtree with its defaults before rehydrating the
+     * values.
+     *
+     * @private
+     * @param {Object} subtree - The Redux subtree.
+     * @param {?Object} defaults - The defaults, if any.
+     * @returns {Object}
+     */
+    _mergeDefaults(subtree: Object, defaults: ?Object) {
+        if (!defaults) {
+            return subtree;
+        }
+
+        // If the subtree is an array, we don't need to merge it with the
+        // defaults, because if it has a value, it will overwrite it, and if
+        // it's undefined, it won't be even returned, and Redux will natively
+        // use the default values instead.
+        if (!Array.isArray(subtree)) {
+            return {
+                ...defaults,
+                ...subtree
+            };
+        }
     }
 }
 

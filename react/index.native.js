@@ -1,3 +1,5 @@
+// @flow
+
 // FIXME The bundler-related (and the browser-related) polyfills were born at
 // the very early days of prototyping the execution of lib-jitsi-meet on
 // react-native. Today, the feature base/lib-jitsi-meet should not be
@@ -8,16 +10,27 @@
 // collect the polyfills' files.
 import './features/base/lib-jitsi-meet/native/polyfills-bundler';
 
-// FIXME: Remove once react-native-webrtc and react-native-prompt import
-// PropTypes from 'prop-types' instead of 'react'.
-import './features/base/react/prop-types-polyfill';
-
-import PropTypes from 'prop-types';
-import React, { Component } from 'react';
-import { AppRegistry, Linking, NativeModules } from 'react-native';
+import React, { PureComponent } from 'react';
+import { AppRegistry } from 'react-native';
 
 import { App } from './features/app';
-import { equals } from './features/base/redux';
+import { IncomingCallApp } from './features/mobile/incoming-call';
+
+// It's crucial that the native loggers are created ASAP, not to lose any data.
+import { _initLogging } from './features/base/logging/functions';
+
+declare var __DEV__;
+
+/**
+ * The type of the React {@code Component} props of {@link Root}.
+ */
+type Props = {
+
+    /**
+     * The URL, if any, with which the app was launched.
+     */
+    url: Object | string
+};
 
 /**
  * React Native doesn't support specifying props to the main/root component (in
@@ -26,106 +39,7 @@ import { equals } from './features/base/redux';
  *
  * @extends Component
  */
-class Root extends Component {
-    /**
-     * {@code Root} component's property types.
-     *
-     * @static
-     */
-    static propTypes = {
-        /**
-         * The URL, if any, with which the app was launched.
-         */
-        url: PropTypes.oneOfType([
-            PropTypes.object,
-            PropTypes.string
-        ]),
-
-        /**
-         * Whether the Welcome page is enabled. If {@code true}, the Welcome
-         * page is rendered when the {@link App} is not at a location (URL)
-         * identifying a Jitsi Meet conference/room.
-         */
-        welcomePageEnabled: PropTypes.bool
-    };
-
-    /**
-     * Initializes a new {@code Root} instance.
-     *
-     * @param {Object} props - The read-only properties with which the new
-     * instance is to be initialized.
-     */
-    constructor(props) {
-        super(props);
-
-        /**
-         * The initial state of this Component.
-         *
-         * @type {{
-         *     url: object|string
-         * }}
-         */
-        this.state = {
-            /**
-             * The URL, if any, with which the app was launched.
-             *
-             * @type {object|string}
-             */
-            url: this.props.url
-        };
-
-        // Handle the URL, if any, with which the app was launched. But props
-        // have precedence.
-        if (typeof this.props.url === 'undefined') {
-            this._getInitialURL()
-                .then(url => {
-                    if (typeof this.state.url === 'undefined') {
-                        this.setState({ url });
-                    }
-                })
-                .catch(err => {
-                    console.error('Failed to get initial URL', err);
-
-                    if (typeof this.state.url === 'undefined') {
-                        // Start with an empty URL if getting the initial URL
-                        // fails; otherwise, nothing will be rendered.
-                        this.setState({ url: null });
-                    }
-                });
-        }
-    }
-
-    /**
-     * Gets the initial URL the app was launched with. This can be a universal
-     * (or deep) link, or a CallKit intent in iOS. Since the native
-     * {@code Linking} module doesn't provide a way to access intents in iOS,
-     * those are handled with the {@code LaunchOptions} module, which
-     * essentially provides a replacement which takes that into consideration.
-     *
-     * @private
-     * @returns {Promise} - A promise which will be fulfilled with the URL that
-     * the app was launched with.
-     */
-    _getInitialURL() {
-        if (NativeModules.LaunchOptions) {
-            return NativeModules.LaunchOptions.getInitialURL();
-        }
-
-        return Linking.getInitialURL();
-    }
-
-    /**
-     * Implements React's {@link Component#componentWillReceiveProps()}.
-     *
-     * New props can be set from the native side by setting the appProperties
-     * property (on iOS) or calling setAppProperties (on Android).
-     *
-     * @inheritdoc
-     */
-    componentWillReceiveProps({ url }) {
-        equals(this.props.url, url) || this.setState({ url: url || null });
-    }
-
+class Root extends PureComponent<Props> {
     /**
      * Implements React's {@link Component#render()}.
      *
@@ -133,29 +47,38 @@ class Root extends Component {
      * @returns {ReactElement}
      */
     render() {
-        const { url } = this.state;
-
-        // XXX We don't render the App component until we get the initial URL.
-        // Either it's null or some other non-null defined value.
-        if (typeof url === 'undefined') {
-            return null;
-        }
-
-        const {
-            // The following props are forked in state:
-            url: _, // eslint-disable-line no-unused-vars
-
-            // The remaining props are passed through to App.
-            ...props
-        } = this.props;
-
         return (
             <App
-                { ...props }
-                url = { url } />
+                { ...this.props } />
         );
     }
 }
 
-// Register the main/root Component.
+// Initialize logging.
+_initLogging();
+
+// HORRIBLE HACK ALERT! React Native logs the initial props with `console.log`. Here we are quickly patching it
+// to avoid logging potentially sensitive information.
+if (!__DEV__) {
+    /* eslint-disable */
+
+    const __orig_console_log = console.log;
+    const __orig_appregistry_runapplication = AppRegistry.runApplication;
+
+    AppRegistry.runApplication = (...args) => {
+        // $FlowExpectedError
+        console.log = () => {};
+        __orig_appregistry_runapplication(...args);
+        // $FlowExpectedError
+        console.log = __orig_console_log;
+    };
+
+    /* eslint-enable */
+}
+
+
+// Register the main/root Component of JitsiMeetView.
 AppRegistry.registerComponent('App', () => Root);
+
+// Register the main/root Component of IncomingCallView.
+AppRegistry.registerComponent('IncomingCallApp', () => IncomingCallApp);

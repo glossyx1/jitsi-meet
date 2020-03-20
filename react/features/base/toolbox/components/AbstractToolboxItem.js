@@ -42,9 +42,14 @@ export type Props = {
     disabled: boolean,
 
     /**
-     * The name of the icon of this {@code ToolboxItem}.
+     * A React Element to display at the end of {@code ToolboxItem}.
      */
-    iconName: string,
+    elementAfter?: React$Node,
+
+    /**
+     * The icon to render for this {@code ToolboxItem}.
+     */
+    icon: Object,
 
     /**
      * The text associated with this item. When `showLabel` is set to
@@ -71,6 +76,11 @@ export type Props = {
      * Invoked to obtain translated strings.
      */
     t: ?Function,
+
+    /**
+     * True if the item is toggled, false otherwise.
+     */
+    toggled: boolean,
 
     /**
      * The text to display in the tooltip. Used only on web.
@@ -196,6 +206,7 @@ export default class AbstractToolboxItem<P : Props> extends Component<P> {
      */
     _renderItem() {
         // To be implemented by a subclass.
+        return null;
     }
 
     /**
